@@ -3,17 +3,18 @@ import { json } from "body-parser";
 import { DataSnapshot } from "firebase-admin/database";
 import cors from "cors";
 import admin from "firebase-admin";
+import { WebSocketServer, WebSocket } from 'ws';
+import * as dotenv from 'dotenv';
 
-require('dotenv').config();
+dotenv.config();
 
-// Verificar si la variable de entorno existe y tiene un valor válido
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
   ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT as string)
   : null;
 
 if (!serviceAccount) {
   console.error("La variable de entorno FIREBASE_SERVICE_ACCOUNT no está definida o no es un JSON válido.");
-  process.exit(1); // Salir del proceso si la variable no es válida
+  process.exit(1);
 }
 
 admin.initializeApp({
@@ -28,6 +29,41 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+const wss = new WebSocketServer({ port: 8080 });
+const clients = new Map<string, WebSocket>();
+
+wss.on('connection', (ws: WebSocket) => {
+  console.log('Cliente WebSocket conectado');
+
+  ws.on('message', (message: string) => {
+    console.log('Mensaje recibido: %s', message);
+    try {
+      const parsedMessage = JSON.parse(message);
+      if (parsedMessage.type === 'joinRoom') {
+        const roomId = parsedMessage.roomId;
+        clients.set(roomId, ws);
+        console.log(`Cliente unido a la sala ${roomId}`);
+      }
+    } catch (error) {
+      console.error('Error al analizar el mensaje:', error);
+    }
+  });
+
+  ws.on('close', () => {
+    console.log('Cliente WebSocket desconectado');
+    clients.forEach((clientWs, roomId) => {
+      if (clientWs === ws) {
+        clients.delete(roomId);
+        console.log(`Cliente eliminado de la sala ${roomId}`);
+      }
+    });
+  });
+
+  ws.on('error', (error) => {
+    console.error('Error WebSocket:', error);
+  });
+});
+
 app.post("/api/rooms", (req, res) => {
   let roomId = generateShortId();
 
@@ -39,15 +75,19 @@ app.post("/api/rooms", (req, res) => {
 
     const newRoomRef = db.ref(`rooms/${roomId}`);
     newRoomRef.set({
-      player1Name: "",
-      player2Name: "",
-      player1Play: null,
-      player2Play: null,
-      statistics: {
-        player1: { wins: 0, losses: 0, draws: 0 },
-        player2: { wins: 0, losses: 0, draws: 0 },
+      currentGame: {
+        data: {
+          player1Name: "",
+          player2Name: "",
+          player1Play: null,
+          player2Play: null,
+          gameOver: false,
+        },
+        statistics: {
+          player1: { wins: 0, losses: 0, draws: 0 },
+          player2: { wins: 0, losses: 0, draws: 0 },
+        },
       },
-      gameOver: false,
       readyForNextRound: false,
     });
     res.json({ roomId: roomId });
@@ -58,18 +98,20 @@ app.put("/api/rooms/:roomId/join", (req, res) => {
   const { roomId } = req.params;
   const { playerName } = req.body;
   const roomRef = db.ref(`rooms/${roomId}`);
+
   roomRef.once("value", (snapshot: DataSnapshot) => {
     const roomData = snapshot.val();
     if (roomData) {
-      if (!roomData.player1Name) {
-        roomRef.update({ player1Name: playerName });
+      if (!roomData.currentGame.data.player1Name) {
+        roomRef.update({ 'currentGame/data/player1Name': playerName });
         res.json({ playerNumber: 1 });
-      } else if (!roomData.player2Name) {
-        roomRef.update({ player2Name: playerName });
+      } else if (!roomData.currentGame.data.player2Name) {
+        roomRef.update({ 'currentGame/data/player2Name': playerName });
         res.json({ playerNumber: 2 });
       } else {
         res.status(400).json({ message: "Sala llena" });
       }
+      notifyRoomUpdate(roomId);
     } else {
       res.status(404).json({ message: "Sala no encontrada" });
     }
@@ -84,25 +126,25 @@ app.put("/api/rooms/:roomId/move", (req, res) => {
     const roomData = snapshot.val();
     if (roomData) {
       if (playerNumber === 1) {
-        roomRef.update({ player1Play: move });
+        roomRef.update({ 'currentGame/data/player1Play': move });
       } else {
-        roomRef.update({ player2Play: move });
+        roomRef.update({ 'currentGame/data/player2Play': move });
       }
-      if (roomData.player1Play && roomData.player2Play) {
-        let player1Wins = roomData.statistics.player1.wins;
-        let player1Losses = roomData.statistics.player1.losses;
-        let player1Draws = roomData.statistics.player1.draws;
-        let player2Wins = roomData.statistics.player2.wins;
-        let player2Losses = roomData.statistics.player2.losses;
-        let player2Draws = roomData.statistics.player2.draws;
+      if (roomData.currentGame.data.player1Play && roomData.currentGame.data.player2Play) {
+        let player1Wins = roomData.currentGame.statistics.player1.wins;
+        let player1Losses = roomData.currentGame.statistics.player1.losses;
+        let player1Draws = roomData.currentGame.statistics.player1.draws;
+        let player2Wins = roomData.currentGame.statistics.player2.wins;
+        let player2Losses = roomData.currentGame.statistics.player2.losses;
+        let player2Draws = roomData.currentGame.statistics.player2.draws;
 
-        if (roomData.player1Play === roomData.player2Play) {
+        if (roomData.currentGame.data.player1Play === roomData.currentGame.data.player2Play) {
           player1Draws++;
           player2Draws++;
         } else if (
-          (roomData.player1Play === "piedra" && roomData.player2Play === "tijera") ||
-          (roomData.player1Play === "tijera" && roomData.player2Play === "papel") ||
-          (roomData.player1Play === "papel" && roomData.player2Play === "piedra")
+          (roomData.currentGame.data.player1Play === "piedra" && roomData.currentGame.data.player2Play === "tijera") ||
+          (roomData.currentGame.data.player1Play === "tijera" && roomData.currentGame.data.player2Play === "papel") ||
+          (roomData.currentGame.data.player1Play === "papel" && roomData.currentGame.data.player2Play === "piedra")
         ) {
           player1Wins++;
           player2Losses++;
@@ -112,13 +154,11 @@ app.put("/api/rooms/:roomId/move", (req, res) => {
         }
 
         roomRef.update({
-          statistics: {
-            player1: { wins: player1Wins, losses: player1Losses, draws: player1Draws },
-            player2: { wins: player2Wins, losses: player2Losses, draws: player2Draws },
-          },
-          player1Play: null,
-          player2Play: null,
-          gameOver: true,
+          'currentGame/statistics/player1': { wins: player1Wins, losses: player1Losses, draws: player1Draws },
+          'currentGame/statistics/player2': { wins: player2Wins, losses: player2Losses, draws: player2Draws },
+          'currentGame/data/player1Play': null,
+          'currentGame/data/player2Play': null,
+          'currentGame/data/gameOver': true,
         });
       }
       res.json({ message: "Movimiento registrado" });
@@ -131,6 +171,19 @@ app.put("/api/rooms/:roomId/move", (req, res) => {
 function generateShortId() {
   let roomId = Math.floor(1000 + Math.random() * 9000);
   return roomId.toString();
+}
+
+function notifyRoomUpdate(roomId: string) {
+  const roomRef = db.ref(`rooms/${roomId}`);
+  roomRef.once("value", (snapshot: DataSnapshot) => {
+    const roomData = snapshot.val();
+    if (roomData) {
+      const client = clients.get(roomId);
+      if (client) {
+        client.send(JSON.stringify({ type: 'roomUpdate', data: roomData }));
+      }
+    }
+  });
 }
 
 app.listen(port, () => {
