@@ -30,8 +30,8 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-const server = http.createServer(app); // Crear servidor HTTP con Express
-const wss = new WebSocketServer({ server }); // Pasar el servidor HTTP al constructor de WebSocketServer
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: '/ws' }); // Especificar la ruta '/ws'
 const clients = new Map<string, WebSocket>();
 
 wss.on('connection', (ws) => {
@@ -40,7 +40,7 @@ wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         console.log('Mensaje recibido: %s', message);
         try {
-            const parsedMessage = JSON.parse(message.toString()); // Convertir a string antes de parsear
+            const parsedMessage = JSON.parse(message.toString());
             if (parsedMessage.type === 'joinRoom') {
                 const roomId = parsedMessage.roomId;
                 clients.set(roomId, ws);
@@ -73,17 +73,18 @@ wss.on('connection', (ws) => {
     });
 });
 
-app.post("/api/rooms", (req, res) => {
-    let roomId = generateShortId();
+app.post("/api/rooms", async (req, res) => {
+    try {
+        let roomId = generateShortId();
+        const roomRef = db.ref(`rooms/${roomId}`);
+        const snapshot = await roomRef.once("value");
 
-    const roomRef = db.ref(`rooms/${roomId}`);
-    roomRef.once("value", (snapshot: DataSnapshot) => {
         if (snapshot.exists()) {
             roomId = generateShortId();
         }
 
         const newRoomRef = db.ref(`rooms/${roomId}`);
-        newRoomRef.set({
+        await newRoomRef.set({
             currentGame: {
                 data: {
                     player1Name: "",
@@ -100,22 +101,26 @@ app.post("/api/rooms", (req, res) => {
             readyForNextRound: false,
         });
         res.json({ roomId: roomId });
-    });
+    } catch (error) {
+        console.error("Error al crear la sala:", error);
+        res.status(500).json({ message: "Error interno del servidor" });
+    }
 });
 
-app.put("/api/rooms/:roomId/join", (req, res) => {
-    const { roomId } = req.params;
-    const { playerName } = req.body;
-    const roomRef = db.ref(`rooms/${roomId}`);
-
-    roomRef.once("value", (snapshot: DataSnapshot) => {
+app.put("/api/rooms/:roomId/join", async (req, res) => {
+    try {
+        const { roomId } = req.params;
+        const { playerName } = req.body;
+        const roomRef = db.ref(`rooms/${roomId}`);
+        const snapshot = await roomRef.once("value");
         const roomData = snapshot.val();
+
         if (roomData) {
             if (!roomData.currentGame.data.player1Name) {
-                roomRef.update({ 'currentGame/data/player1Name': playerName });
+                await roomRef.update({ 'currentGame/data/player1Name': playerName });
                 res.json({ playerNumber: 1 });
             } else if (!roomData.currentGame.data.player2Name) {
-                roomRef.update({ 'currentGame/data/player2Name': playerName });
+                await roomRef.update({ 'currentGame/data/player2Name': playerName });
                 res.json({ playerNumber: 2 });
             } else {
                 res.status(400).json({ message: "Sala llena" });
@@ -124,21 +129,27 @@ app.put("/api/rooms/:roomId/join", (req, res) => {
         } else {
             res.status(404).json({ message: "Sala no encontrada" });
         }
-    });
+    } catch (error) {
+        console.error("Error al unirse a la sala:", error);
+        res.status(500).json({ message: "Error interno del servidor" });
+    }
 });
 
-app.put("/api/rooms/:roomId/move", (req, res) => {
-    const { roomId } = req.params;
-    const { playerNumber, move } = req.body;
-    const roomRef = db.ref(`rooms/${roomId}`);
-    roomRef.once("value", (snapshot: DataSnapshot) => {
+app.put("/api/rooms/:roomId/move", async (req, res) => {
+    try {
+        const { roomId } = req.params;
+        const { playerNumber, move } = req.body;
+        const roomRef = db.ref(`rooms/${roomId}`);
+        const snapshot = await roomRef.once("value");
         const roomData = snapshot.val();
+
         if (roomData) {
             if (playerNumber === 1) {
-                roomRef.update({ 'currentGame/data/player1Play': move });
+                await roomRef.update({ 'currentGame/data/player1Play': move });
             } else {
-                roomRef.update({ 'currentGame/data/player2Play': move });
+                await roomRef.update({ 'currentGame/data/player2Play': move });
             }
+
             if (roomData.currentGame.data.player1Play && roomData.currentGame.data.player2Play) {
                 let player1Wins = roomData.currentGame.statistics.player1.wins;
                 let player1Losses = roomData.currentGame.statistics.player1.losses;
@@ -162,7 +173,7 @@ app.put("/api/rooms/:roomId/move", (req, res) => {
                     player1Losses++;
                 }
 
-                roomRef.update({
+                await roomRef.update({
                     'currentGame/statistics/player1': { wins: player1Wins, losses: player1Losses, draws: player1Draws },
                     'currentGame/statistics/player2': { wins: player2Wins, losses: player2Losses, draws: player2Draws },
                     'currentGame/data/player1Play': null,
@@ -174,7 +185,10 @@ app.put("/api/rooms/:roomId/move", (req, res) => {
         } else {
             res.status(404).json({ message: "Sala no encontrada" });
         }
-    });
+    } catch (error) {
+        console.error("Error al registrar el movimiento:", error);
+        res.status(500).json({ message: "Error interno del servidor" });
+    }
 });
 
 function generateShortId() {
@@ -196,5 +210,5 @@ function notifyRoomUpdate(roomId: string) {
 }
 
 server.listen(port, () => { // Inicia el servidor HTTP
-    console.log(`Servidor iniciado en el puerto ${port}`);
+  console.log(`Servidor iniciado en el puerto ${port}`);
 });
