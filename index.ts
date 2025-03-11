@@ -134,7 +134,7 @@ app.put("/api/rooms/:roomId/join", async (req, res) => {
       const { playerName } = req.body;
       const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
       const snapshot = await roomRef.once("value");
-
+      notifyRoomUpdate(roomId)
       if (snapshot.exists()) {
           const roomData = snapshot.val();
           if (!roomData.player2Name) { // Verifica si player2Name está vacío
@@ -252,22 +252,18 @@ function generateShortId() {
 
 function notifyRoomUpdate(roomId: string) {
   const roomRef = db.ref(`rooms/${roomId}`);
-
   roomRef.once("value", (snapshot: DataSnapshot) => {
-    const roomData = snapshot.val();
-
-    if (roomData) {
-      const client = clients.get(roomId);
-
-      if (client) {
-        client.send(JSON.stringify({ type: "roomUpdate", data: roomData }));
+      const roomData = snapshot.val();
+      if (roomData) {
+          const ws = clients.get(roomId); // Obtener el WebSocket del cliente
+          if (ws) {
+              ws.send(JSON.stringify({ type: "roomUpdate", data: roomData }));
+          }
       }
-    }
   });
 }
 
 server.listen(port, () => {
-  // Inicia el servidor HTTP
 
   console.log(`Servidor iniciado en el puerto ${port}`);
 });
