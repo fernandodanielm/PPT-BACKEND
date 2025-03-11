@@ -88,50 +88,45 @@ wss.on("connection", (ws) => {
 });
 
 app.post("/api/rooms", async (req, res) => {
-    try {
+  try {
       let roomId = generateShortId();
-  
       const roomRef = db.ref(`rooms/${roomId}`);
-  
       const snapshot = await roomRef.once("value");
-  
+
       if (snapshot.exists()) {
-        roomId = generateShortId();
+          roomId = generateShortId();
       }
-  
+
       const newRoomRef = db.ref(`rooms/${roomId}`);
-  
-      // Obtener el nombre del jugador del cuerpo de la solicitud
+      console.log("Cuerpo de la solicitud:", req.body); // Agregar log
+
       const { playerName } = req.body; 
-  
+      console.log("Nombre del jugador:", playerName); // Agregar log
+
       const newRoom = {
-        currentGame: {
-          data: {
-            player1Name: "", // Asignar el nombre del jugador
-            player2Name: "",
-            player1Play: null,
-            player2Play: null,
-            gameOver: false,
+          currentGame: {
+              data: {
+                  player1Name: playerName, // Asignar el nombre del jugador
+                  player2Name: "",
+                  player1Play: null,
+                  player2Play: null,
+                  gameOver: false,
+              },
+              statistics: {
+                  player1: { wins: 0, losses: 0, draws: 0 },
+                  player2: { wins: 0, losses: 0, draws: 0 },
+              },
           },
-          statistics: {
-            player1: { wins: 0, losses: 0, draws: 0 },
-            player2: { wins: 0, losses: 0, draws: 0 },
-          },
-        },
-        readyForNextRound: false,
+          readyForNextRound: false,
       };
-  
+
       await newRoomRef.set(newRoom);
-  
-      // Incluir currentGame en la respuesta
       res.json({ roomId: roomId, currentGame: newRoom.currentGame });
-    } catch (error) {
+  } catch (error) {
       console.error("Error al crear la sala:", error);
-  
-      // No se envía res.status(500)
-      res.status(500).json({ message: "Error interno del servidor" }); // Puedes enviar el mensaje de error para depuración
-    }
-  });
+      res.status(500).json({ message: "Error interno del servidor" });
+  }
+});
 
   app.put("/api/rooms/:roomId/join", async (req, res) => {
     try {
