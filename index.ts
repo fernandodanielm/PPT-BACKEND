@@ -107,7 +107,7 @@ app.post("/api/rooms", async (req, res) => {
       const newRoom = {
         currentGame: {
           data: {
-            player1Name: playerName, // Asignar el nombre del jugador
+            player1Name: "", // Asignar el nombre del jugador
             player2Name: "",
             player1Play: null,
             player2Play: null,
