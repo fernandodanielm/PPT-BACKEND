@@ -128,24 +128,24 @@ app.post("/api/rooms", async (req, res) => {
   }
 });
 
-  app.put("/api/rooms/:roomId/join", async (req, res) => {
-    try {
-        const roomId = req.params.roomId;
-        const { nombre } = req.body;
-        const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
-        const snapshot = await roomRef.once("value");
+app.put("/api/rooms/:roomId/join", async (req, res) => {
+  try {
+      const roomId = req.params.roomId;
+      const { playerName } = req.body; // Cambiado a playerName
+      const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
+      const snapshot = await roomRef.once("value");
 
-        if (snapshot.exists()) {
-            await roomRef.update({ player2Name: nombre });
-            const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
-            res.json({ currentGame: updatedRoom.val() });
-        } else {
-            res.status(404).json({ message: "Sala no encontrada." });
-        }
-    } catch (error) {
-        console.error("Error al unirse a la sala:", error);
-        res.status(500).json({ message: "Error interno del servidor." });
-    }
+      if (snapshot.exists()) {
+          await roomRef.update({ player2Name: playerName }); // Cambiado a playerName
+          const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
+          res.json({ currentGame: updatedRoom.val() });
+      } else {
+          res.status(404).json({ message: "Sala no encontrada." });
+      }
+  } catch (error) {
+      console.error("Error al unirse a la sala:", error);
+      res.status(500).json({ message: "Error interno del servidor." });
+  }
 });
 
 app.put("/api/rooms/:roomId/move", async (req, res) => {

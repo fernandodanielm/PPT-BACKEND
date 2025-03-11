@@ -135,11 +135,11 @@ app.post("/api/rooms", async (req, res) => {
 app.put("/api/rooms/:roomId/join", async (req, res) => {
     try {
         const roomId = req.params.roomId;
-        const { nombre } = req.body;
+        const { playerName } = req.body; // Cambiado a playerName
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const snapshot = await roomRef.once("value");
         if (snapshot.exists()) {
-            await roomRef.update({ player2Name: nombre });
+            await roomRef.update({ player2Name: playerName }); // Cambiado a playerName
             const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
             res.json({ currentGame: updatedRoom.val() });
         }
