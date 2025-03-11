@@ -135,13 +135,19 @@ app.post("/api/rooms", async (req, res) => {
 app.put("/api/rooms/:roomId/join", async (req, res) => {
     try {
         const roomId = req.params.roomId;
-        const { playerName } = req.body; // Cambiado a playerName
+        const { playerName } = req.body;
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const snapshot = await roomRef.once("value");
         if (snapshot.exists()) {
-            await roomRef.update({ player2Name: playerName }); // Cambiado a playerName
-            const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
-            res.json({ currentGame: updatedRoom.val() });
+            const roomData = snapshot.val();
+            if (!roomData.player2Name) { // Verifica si player2Name está vacío
+                await roomRef.update({ player2Name: playerName });
+                const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
+                res.json({ currentGame: updatedRoom.val() });
+            }
+            else {
+                res.status(409).json({ message: "La sala ya está llena." }); // Conflicto: Sala llena
+            }
         }
         else {
             res.status(404).json({ message: "Sala no encontrada." });
