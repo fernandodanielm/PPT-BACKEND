@@ -60,6 +60,7 @@ const port = process.env.PORT || 3000;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 const server = http.createServer(app);
+// Configuración del servidor WebSocket
 const wss = new ws_1.WebSocketServer({ server, path: "/ws" }); // Especificar la ruta '/ws'
 const clients = new Map();
 wss.on("connection", (ws) => {
@@ -71,7 +72,8 @@ wss.on("connection", (ws) => {
             if (parsedMessage.type === "joinRoom") {
                 const roomId = parsedMessage.roomId;
                 clients.set(roomId, ws);
-                console.log(`Cliente unido a la sala ${roomId}`); // Notificar a los otros jugadores en la sala sobre la nueva conexión
+                console.log(`Mensaje joinRoom recibido para la sala ${roomId}`); // Agregar log
+                console.log(`Cliente unido a la sala ${roomId}`);
                 for (const client of clients.values()) {
                     if (client !== ws) {
                         client.send(JSON.stringify({ type: "playerJoined" }));
@@ -96,6 +98,7 @@ wss.on("connection", (ws) => {
         console.error("Error WebSocket:", error);
     });
 });
+// Rutas de la API
 app.post("/api/rooms", async (req, res) => {
     try {
         let roomId = generateShortId();
@@ -105,13 +108,13 @@ app.post("/api/rooms", async (req, res) => {
             roomId = generateShortId();
         }
         const newRoomRef = db.ref(`rooms/${roomId}`);
-        console.log("Cuerpo de la solicitud:", req.body); // Agregar log
+        console.log("Cuerpo de la solicitud:", req.body);
         const { playerName } = req.body;
-        console.log("Nombre del jugador:", playerName); // Agregar log
+        console.log("Nombre del jugador:", playerName);
         const newRoom = {
             currentGame: {
                 data: {
-                    player1Name: playerName, // Asignar el nombre del jugador
+                    player1Name: playerName,
                     player2Name: "",
                     player1Play: null,
                     player2Play: null,
@@ -141,13 +144,13 @@ app.put("/api/rooms/:roomId/join", async (req, res) => {
         notifyRoomUpdate(roomId);
         if (snapshot.exists()) {
             const roomData = snapshot.val();
-            if (!roomData.player2Name) { // Verifica si player2Name está vacío
+            if (!roomData.player2Name) {
                 await roomRef.update({ player2Name: playerName });
                 const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
                 res.json({ currentGame: updatedRoom.val() });
             }
             else {
-                res.status(409).json({ message: "La sala ya está llena." }); // Conflicto: Sala llena
+                res.status(409).json({ message: "La sala ya está llena." });
             }
         }
         else {
@@ -226,6 +229,7 @@ app.put("/api/rooms/:roomId/move", async (req, res) => {
         res.status(500).json({ message: "Error interno del servidor" });
     }
 });
+// Funciones auxiliares
 function generateShortId() {
     let roomId = Math.floor(1000 + Math.random() * 9000);
     return roomId.toString();
@@ -242,6 +246,7 @@ function notifyRoomUpdate(roomId) {
         }
     });
 }
+// Iniciar el servidor
 server.listen(port, () => {
     console.log(`Servidor iniciado en el puerto ${port}`);
 });
