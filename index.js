@@ -71,8 +71,7 @@ wss.on("connection", (ws) => {
             if (parsedMessage.type === "joinRoom") {
                 const roomId = parsedMessage.roomId;
                 clients.set(roomId, ws);
-                console.log(`Cliente unido a la sala ${roomId}`);
-                // Notificar a los otros jugadores en la sala sobre la nueva conexión
+                console.log(`Cliente unido a la sala ${roomId}`); // Notificar a los otros jugadores en la sala sobre la nueva conexión
                 for (const client of clients.values()) {
                     if (client !== ws) {
                         client.send(JSON.stringify({ type: "playerJoined" }));
@@ -99,17 +98,17 @@ wss.on("connection", (ws) => {
 });
 app.post("/api/rooms", async (req, res) => {
     try {
-        const { playerName } = req.body;
         let roomId = generateShortId();
-        let roomRef = db.ref(`rooms/${roomId}`); // Cambiado a 'let'
-        while (await roomRef.once("value").then((snapshot) => snapshot.exists())) {
+        const roomRef = db.ref(`rooms/${roomId}`);
+        const snapshot = await roomRef.once("value");
+        if (snapshot.exists()) {
             roomId = generateShortId();
-            roomRef = db.ref(`rooms/${roomId}`); // Reasignación permitida ahora
         }
+        const newRoomRef = db.ref(`rooms/${roomId}`);
         await roomRef.set({
             currentGame: {
                 data: {
-                    player1Name: playerName,
+                    player1Name: "",
                     player2Name: "",
                     player1Play: null,
                     player2Play: null,
