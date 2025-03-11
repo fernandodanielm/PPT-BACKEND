@@ -105,10 +105,12 @@ app.post("/api/rooms", async (req, res) => {
             roomId = generateShortId();
         }
         const newRoomRef = db.ref(`rooms/${roomId}`);
-        await roomRef.set({
+        // Obtener el nombre del jugador del cuerpo de la solicitud
+        const { playerName } = req.body;
+        const newRoom = {
             currentGame: {
                 data: {
-                    player1Name: "",
+                    player1Name: playerName, // Asignar el nombre del jugador
                     player2Name: "",
                     player1Play: null,
                     player2Play: null,
@@ -120,12 +122,15 @@ app.post("/api/rooms", async (req, res) => {
                 },
             },
             readyForNextRound: false,
-        });
-        res.json({ roomId: roomId });
+        };
+        await newRoomRef.set(newRoom);
+        // Incluir currentGame en la respuesta
+        res.json({ roomId: roomId, currentGame: newRoom.currentGame });
     }
     catch (error) {
         console.error("Error al crear la sala:", error);
-        res.status(500).json({ message: "Error interno del servidor" });
+        // No se envía res.status(500)
+        res.status(500).json({ message: "Error interno del servidor" }); // Puedes enviar el mensaje de error para depuración
     }
 });
 app.put("/api/rooms/:roomId/join", async (req, res) => {
