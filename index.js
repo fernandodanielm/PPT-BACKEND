@@ -39,7 +39,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
-const ws_1 = require("ws");
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
 dotenv.config();
@@ -60,44 +59,6 @@ const port = process.env.PORT || 3000;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 const server = http.createServer(app);
-// Configuración del servidor WebSocket
-const wss = new ws_1.WebSocketServer({ server, path: "/ws" }); // Especificar la ruta '/ws'
-const clients = new Map();
-wss.on("connection", (ws) => {
-    console.log("Cliente WebSocket conectado");
-    ws.on("message", (message) => {
-        console.log("Mensaje recibido: %s", message);
-        try {
-            const parsedMessage = JSON.parse(message.toString());
-            if (parsedMessage.type === "joinRoom") {
-                const roomId = parsedMessage.roomId;
-                clients.set(roomId, ws);
-                console.log(`Mensaje joinRoom recibido para la sala ${roomId}`); // Agregar log
-                console.log(`Cliente unido a la sala ${roomId}`);
-                for (const client of clients.values()) {
-                    if (client !== ws) {
-                        client.send(JSON.stringify({ type: "playerJoined" }));
-                    }
-                }
-            }
-        }
-        catch (error) {
-            console.error("Error al analizar el mensaje:", error);
-        }
-    });
-    ws.on("close", () => {
-        console.log("Cliente WebSocket desconectado");
-        clients.forEach((clientWs, roomId) => {
-            if (clientWs === ws) {
-                clients.delete(roomId);
-                console.log(`Cliente eliminado de la sala ${roomId}`);
-            }
-        });
-    });
-    ws.on("error", (error) => {
-        console.error("Error WebSocket:", error);
-    });
-});
 // Rutas de la API
 app.post("/api/rooms", async (req, res) => {
     try {
@@ -141,12 +102,13 @@ app.put("/api/rooms/:roomId/join", async (req, res) => {
         const { playerName } = req.body;
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const snapshot = await roomRef.once("value");
-        notifyRoomUpdate(roomId);
         if (snapshot.exists()) {
             const roomData = snapshot.val();
             if (!roomData.player2Name) {
                 await roomRef.update({ player2Name: playerName });
-                const updatedRoom = await db.ref(`rooms/${roomId}/currentGame`).once('value');
+                const updatedRoom = await db
+                    .ref(`rooms/${roomId}/currentGame`)
+                    .once("value");
                 res.json({ currentGame: updatedRoom.val() });
             }
             else {
@@ -233,18 +195,6 @@ app.put("/api/rooms/:roomId/move", async (req, res) => {
 function generateShortId() {
     let roomId = Math.floor(1000 + Math.random() * 9000);
     return roomId.toString();
-}
-function notifyRoomUpdate(roomId) {
-    const roomRef = db.ref(`rooms/${roomId}`);
-    roomRef.once("value", (snapshot) => {
-        const roomData = snapshot.val();
-        if (roomData) {
-            const ws = clients.get(roomId); // Obtener el WebSocket del cliente
-            if (ws) {
-                ws.send(JSON.stringify({ type: "roomUpdate", data: roomData }));
-            }
-        }
-    });
 }
 // Iniciar el servidor
 server.listen(port, () => {
