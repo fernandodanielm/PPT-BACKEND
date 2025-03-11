@@ -76,40 +76,39 @@ wss.on("connection", (ws) => {
 });
 
 app.post("/api/rooms", async (req, res) => {
-  try {
-    let roomId = generateShortId();
-    const roomRef = db.ref(`rooms/${roomId}`);
-    const snapshot = await roomRef.once("value");
-
-    if (snapshot.exists()) {
-      roomId = generateShortId();
-    }
-
-    const { playerName } = req.body; // Obtener el nombre del jugador
-
-    const newRoomRef = db.ref(`rooms/${roomId}`);
-    await newRoomRef.set({
-      currentGame: {
-        data: {
-          player1Name: playerName, // Asignar el nombre del jugador
-          player2Name: "",
-          player1Play: null,
-          player2Play: null,
-          gameOver: false,
-        },
-        statistics: {
-          player1: { wins: 0, losses: 0, draws: 0 },
-          player2: { wins: 0, losses: 0, draws: 0 },
-        },
-      },
-      readyForNextRound: false,
+    try {
+        const { playerName } = req.body;
+        let roomId = generateShortId();
+        let roomRef = db.ref(`rooms/${roomId}`); // Cambiado a 'let'
+    
+        while (await roomRef.once("value").then((snapshot) => snapshot.exists())) {
+          roomId = generateShortId();
+          roomRef = db.ref(`rooms/${roomId}`); // Reasignación permitida ahora
+        }
+    
+        await roomRef.set({
+          currentGame: {
+            data: {
+              player1Name: playerName,
+              player2Name: "",
+              player1Play: null,
+              player2Play: null,
+              gameOver: false,
+            },
+            statistics: {
+              player1: { wins: 0, losses: 0, draws: 0 },
+              player2: { wins: 0, losses: 0, draws: 0 },
+            },
+          },
+          readyForNextRound: false,
+        });
+    
+        res.json({ roomId: roomId });
+      } catch (error) {
+        console.error("Error al crear la sala:", error);
+        res.status(500).json({ message: "Error interno del servidor" });
+      }
     });
-    res.json({ roomId: roomId });
-  } catch (error) {
-    console.error("Error al crear la sala:", error);
-    res.status(500).json({ message: "Error interno del servidor" });
-  }
-});
 
 app.put("/api/rooms/:roomId/join", async (req, res) => {
   try {

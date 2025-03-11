@@ -99,18 +99,17 @@ wss.on("connection", (ws) => {
 });
 app.post("/api/rooms", async (req, res) => {
     try {
+        const { playerName } = req.body;
         let roomId = generateShortId();
-        const roomRef = db.ref(`rooms/${roomId}`);
-        const snapshot = await roomRef.once("value");
-        if (snapshot.exists()) {
+        let roomRef = db.ref(`rooms/${roomId}`); // Cambiado a 'let'
+        while (await roomRef.once("value").then((snapshot) => snapshot.exists())) {
             roomId = generateShortId();
+            roomRef = db.ref(`rooms/${roomId}`); // Reasignación permitida ahora
         }
-        const { playerName } = req.body; // Obtener el nombre del jugador
-        const newRoomRef = db.ref(`rooms/${roomId}`);
-        await newRoomRef.set({
+        await roomRef.set({
             currentGame: {
                 data: {
-                    player1Name: playerName, // Asignar el nombre del jugador
+                    player1Name: playerName,
                     player2Name: "",
                     player1Play: null,
                     player2Play: null,
