@@ -106,6 +106,17 @@ app.put("/api/rooms/:roomId/join", async (req, res) => {
             const roomData = snapshot.val();
             if (!roomData.player2Name) {
                 await roomRef.update({ player2Name: playerName });
+                // Agrega un listener para detectar cambios en player2Name
+                db.ref(`rooms/${roomId}/currentGame/data/player2Name`).on("value", (snapshot) => {
+                    if (snapshot.exists()) {
+                        const newPlayer2Name = snapshot.val();
+                        // Notificar a través de Realtime Database
+                        db.ref(`rooms/${roomId}/notifications`).push({
+                            type: "playerJoined",
+                            player2Name: newPlayer2Name,
+                        });
+                    }
+                });
                 const updatedRoom = await db
                     .ref(`rooms/${roomId}/currentGame`)
                     .once("value");
@@ -178,6 +189,11 @@ app.put("/api/rooms/:roomId/move", async (req, res) => {
                     "currentGame/data/player1Play": null,
                     "currentGame/data/player2Play": null,
                     "currentGame/data/gameOver": true,
+                });
+                // Notificar a través de Realtime Database cuando el juego termina
+                db.ref(`rooms/${roomId}/notifications`).push({
+                    type: "gameOver",
+                    currentGame: roomData.currentGame,
                 });
             }
             res.json({ message: "Movimiento registrado" });
