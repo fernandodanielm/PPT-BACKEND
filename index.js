@@ -64,7 +64,7 @@ const server = http.createServer(app);
 app.post("/api/rooms", async (req, res) => {
     try {
         // Generar roomId alfanumérico usando uuidv4
-        let roomId = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 8); // Cambiado a let
+        let roomId = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 5); // Cambiado a let
         const roomRef = db.ref(`rooms/${roomId}`);
         const snapshot = await roomRef.once("value");
         if (snapshot.exists()) {
