@@ -41,6 +41,7 @@ const cors_1 = __importDefault(require("cors"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
+const uuid_1 = require("uuid"); // Importa uuidv4
 dotenv.config();
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
     ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
@@ -62,11 +63,13 @@ const server = http.createServer(app);
 // Rutas de la API
 app.post("/api/rooms", async (req, res) => {
     try {
-        let roomId = generateShortId();
+        // Generar roomId alfanumérico usando uuidv4
+        let roomId = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 8); // Cambiado a let
         const roomRef = db.ref(`rooms/${roomId}`);
         const snapshot = await roomRef.once("value");
         if (snapshot.exists()) {
-            roomId = generateShortId();
+            // Generar un nuevo roomId si ya existe
+            roomId = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 8); // Se reasigna roomId
         }
         const newRoomRef = db.ref(`rooms/${roomId}`);
         console.log("Cuerpo de la solicitud:", req.body);
@@ -207,11 +210,6 @@ app.put("/api/rooms/:roomId/move", async (req, res) => {
         res.status(500).json({ message: "Error interno del servidor" });
     }
 });
-// Funciones auxiliares
-function generateShortId() {
-    let roomId = Math.floor(1000 + Math.random() * 9000);
-    return roomId.toString();
-}
 // Iniciar el servidor
 server.listen(port, () => {
     console.log(`Servidor iniciado en el puerto ${port}`);
