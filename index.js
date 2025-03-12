@@ -32,6 +32,15 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -41,7 +50,7 @@ const cors_1 = __importDefault(require("cors"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
-const uuid_1 = require("uuid"); // Importa uuidv4
+const uuid_1 = require("uuid");
 dotenv.config();
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
     ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
@@ -69,14 +78,13 @@ function generateRoomId(length = 6) {
     return roomId;
 }
 // Rutas de la API
-app.post("/api/rooms", async (req, res) => {
+app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         let roomId = generateRoomId(6);
         const roomRef = db.ref(`rooms/${roomId}`);
-        const snapshot = await roomRef.once("value");
+        const snapshot = yield roomRef.once("value");
         if (snapshot.exists()) {
-            // Generar un nuevo roomId si ya existe
-            roomId = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 6); // Se reasigna roomId
+            roomId = (0, uuid_1.v4)().replace(/-/g, '').substring(0, 6);
         }
         const newRoomRef = db.ref(`rooms/${roomId}`);
         console.log("Cuerpo de la solicitud:", req.body);
@@ -98,24 +106,29 @@ app.post("/api/rooms", async (req, res) => {
             },
             readyForNextRound: false,
         };
-        await newRoomRef.set(newRoom);
+        yield newRoomRef.set(newRoom);
         res.json({ roomId: roomId, currentGame: newRoom.currentGame });
+        console.log(`Sala creada con roomId: ${roomId}`); // Log
     }
     catch (error) {
         console.error("Error al crear la sala:", error);
         res.status(500).json({ message: "Error interno del servidor" });
     }
-});
-app.put("/api/rooms/:roomId/join", async (req, res) => {
+}));
+app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const roomId = req.params.roomId;
         const { playerName } = req.body;
+        if (!roomId || !/^[a-zA-Z0-9]+$/.test(roomId)) {
+            console.error(`roomId inválido: ${roomId}`);
+            return res.status(400).json({ message: "roomId inválido." });
+        }
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
-        const snapshot = await roomRef.once("value");
+        const snapshot = yield roomRef.once("value");
         if (snapshot.exists()) {
             const roomData = snapshot.val();
             if (!roomData.player2Name) {
-                await roomRef.update({ player2Name: playerName });
+                yield roomRef.update({ player2Name: playerName });
                 db.ref(`rooms/${roomId}/currentGame/data/player2Name`).on("value", (snapshot) => {
                     if (snapshot.exists()) {
                         const newPlayer2Name = snapshot.val();
@@ -125,16 +138,19 @@ app.put("/api/rooms/:roomId/join", async (req, res) => {
                         });
                     }
                 });
-                const updatedRoom = await db
+                const updatedRoom = yield db
                     .ref(`rooms/${roomId}/currentGame`)
                     .once("value");
                 res.json({ currentGame: updatedRoom.val() });
+                console.log(`Jugador ${playerName} se unió a la sala ${roomId}`);
             }
             else {
+                console.log(`La sala ${roomId} ya está llena.`);
                 res.status(409).json({ message: "La sala ya está llena." });
             }
         }
         else {
+            console.log(`Sala ${roomId} no encontrada.`);
             res.status(404).json({ message: "Sala no encontrada." });
         }
     }
@@ -142,20 +158,20 @@ app.put("/api/rooms/:roomId/join", async (req, res) => {
         console.error("Error al unirse a la sala:", error);
         res.status(500).json({ message: "Error interno del servidor." });
     }
-});
-app.put("/api/rooms/:roomId/move", async (req, res) => {
+}));
+app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { roomId } = req.params;
         const { playerNumber, move } = req.body;
         const roomRef = db.ref(`rooms/${roomId}`);
-        const snapshot = await roomRef.once("value");
+        const snapshot = yield roomRef.once("value");
         const roomData = snapshot.val();
         if (roomData) {
             if (playerNumber === 1) {
-                await roomRef.update({ "currentGame/data/player1Play": move });
+                yield roomRef.update({ "currentGame/data/player1Play": move });
             }
             else {
-                await roomRef.update({ "currentGame/data/player2Play": move });
+                yield roomRef.update({ "currentGame/data/player2Play": move });
             }
             if (roomData.currentGame.data.player1Play &&
                 roomData.currentGame.data.player2Play) {
@@ -183,7 +199,7 @@ app.put("/api/rooms/:roomId/move", async (req, res) => {
                     player2Wins++;
                     player1Losses++;
                 }
-                await roomRef.update({
+                yield roomRef.update({
                     "currentGame/statistics/player1": {
                         wins: player1Wins,
                         losses: player1Losses,
@@ -213,7 +229,7 @@ app.put("/api/rooms/:roomId/move", async (req, res) => {
         console.error("Error al registrar el movimiento:", error);
         res.status(500).json({ message: "Error interno del servidor" });
     }
-});
+}));
 // Iniciar el servidor
 server.listen(port, () => {
     console.log(`Servidor iniciado en el puerto ${port}`);

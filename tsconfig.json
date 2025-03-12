@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-      "target": "ESNext",
+      "target": "ES2016",
       "module": "commonjs",
       "moduleResolution": "node",
       "strict": true,
