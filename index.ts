@@ -1,10 +1,10 @@
+import express from "express";
 import { json } from "body-parser";
 import cors from "cors";
 import admin from "firebase-admin";
 import * as http from "http";
 import * as dotenv from "dotenv";
 import { v4 as uuidv4 } from 'uuid'; // Importa uuidv4
-import express, { Request, Response } from "express";
 
 dotenv.config();
 
@@ -86,57 +86,45 @@ app.post("/api/rooms", async (req, res) => {
     }
 });
 
-app.post("/api/rooms", async (req: Request, res: Response) => {
-  try {
-      let roomId;
-      let maxAttempts = 10;
-      let attempts = 0;
+app.put("/api/rooms/:roomId/join", async (req, res) => {
+    try {
+        const roomId = req.params.roomId;
+        const { playerName } = req.body;
+        const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
+        const snapshot = await roomRef.once("value");
 
-      do {
-          roomId = generateRoomId(6); // Usar generateRoomId siempre
-          const roomRef = db.ref(`rooms/${roomId}`);
-          const snapshot = await roomRef.once("value");
+        if (snapshot.exists()) {
+            const roomData = snapshot.val();
+            if (!roomData.player2Name) {
+                await roomRef.update({ player2Name: playerName });
 
-          if (!snapshot.exists()) {
-              break;
-          }
+                db.ref(`rooms/${roomId}/currentGame/data/player2Name`).on(
+                    "value",
+                    (snapshot) => {
+                        if (snapshot.exists()) {
+                            const newPlayer2Name = snapshot.val();
+                            db.ref(`rooms/${roomId}/notifications`).push({
+                                type: "playerJoined",
+                                player2Name: newPlayer2Name,
+                            });
+                        }
+                    }
+                );
 
-          attempts++;
-      } while (attempts < maxAttempts);
-
-      if (attempts >= maxAttempts) {
-          console.error("No se pudo generar un roomId único después de varios intentos.");
-          return res.status(500).json({ message: "Error al generar el código de la sala." });
-      }
-
-      const newRoomRef = db.ref(`rooms/${roomId}`);
-      console.log("Cuerpo de la solicitud:", req.body);
-      const { playerName } = req.body;
-      console.log("Nombre del jugador:", playerName);
-
-      const newRoom = {
-          currentGame: {
-              data: {
-                  player1Name: playerName,
-                  player2Name: "",
-                  player1Play: null,
-                  player2Play: null,
-                  gameOver: false,
-              },
-              statistics: {
-                  player1: { wins: 0, losses: 0, draws: 0 },
-                  player2: { wins: 0, losses: 0, draws: 0 },
-              },
-          },
-          readyForNextRound: false,
-      };
-
-      await newRoomRef.set(newRoom);
-      res.json({ roomId: roomId, currentGame: newRoom.currentGame });
-  } catch (error) {
-      console.error("Error al crear la sala:", error);
-      res.status(500).json({ message: "Error interno del servidor" });
-  }
+                const updatedRoom = await db
+                    .ref(`rooms/${roomId}/currentGame`)
+                    .once("value");
+                res.json({ currentGame: updatedRoom.val() });
+            } else {
+                res.status(409).json({ message: "La sala ya está llena." });
+            }
+        } else {
+            res.status(404).json({ message: "Sala no encontrada." });
+        }
+    } catch (error) {
+        console.error("Error al unirse a la sala:", error);
+        res.status(500).json({ message: "Error interno del servidor." });
+    }
 });
 
 app.put("/api/rooms/:roomId/move", async (req, res) => {
