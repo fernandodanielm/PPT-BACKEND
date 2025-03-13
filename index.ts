@@ -79,20 +79,50 @@ app.post("/api/users", async (req: Request, res: Response) => {
 app.put("/api/users/:userId", async (req: Request, res: Response) => {
     try {
         const { userId } = req.params;
+        const { playerName, roomId } = req.body; // Agregar roomId al cuerpo de la petición
 
         // Validaciones básicas
         if (!userId || typeof userId !== 'string' || userId.trim() === '') {
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
 
-        // Validación de userId en Firestore
-        const userDoc = await firestore.collection("users").doc(userId).get();
-        if (!userDoc.exists) {
-            return res.status(404).json({ message: "userId no encontrado." });
+        if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
+            return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
         }
 
-        // userId válido
-        res.status(200).json({ message: "userId válido." });
+        if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+            return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
+        }
+
+        // Obtener la información de la sala desde Realtime Database
+        const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
+        const roomSnapshot = await roomRef.once("value");
+        const roomData = roomSnapshot.val();
+
+        if (!roomData) {
+            return res.status(404).json({ message: "Sala no encontrada." });
+        }
+
+        let playerType: "player1Name" | "player2Name";
+
+        if (!roomData.player1Name) {
+            playerType = "player1Name";
+            await roomRef.update({ player1Name: playerName });
+        } else if (!roomData.player2Name) {
+            playerType = "player2Name";
+            await roomRef.update({ player2Name: playerName });
+        } else {
+            return res.status(409).json({ message: "La sala está llena." });
+        }
+
+        // Guardar playerName y userId en Firestore
+        await firestore.collection("users").doc(userId).set({
+            playerName: playerName,
+            userId: userId,
+            playerType: playerType // Guardar el tipo de jugador
+        });
+
+        res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
     } catch (error) {
         if (error instanceof Error) {
             console.error("Error:", error.message);

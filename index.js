@@ -99,17 +99,43 @@ app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function*
 app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { userId } = req.params;
+        const { playerName, roomId } = req.body; // Agregar roomId al cuerpo de la petición
         // Validaciones básicas
         if (!userId || typeof userId !== 'string' || userId.trim() === '') {
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
-        // Validación de userId en Firestore
-        const userDoc = yield firestore.collection("users").doc(userId).get();
-        if (!userDoc.exists) {
-            return res.status(404).json({ message: "userId no encontrado." });
+        if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
+            return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
         }
-        // userId válido
-        res.status(200).json({ message: "userId válido." });
+        if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+            return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
+        }
+        // Obtener la información de la sala desde Realtime Database
+        const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
+        const roomSnapshot = yield roomRef.once("value");
+        const roomData = roomSnapshot.val();
+        if (!roomData) {
+            return res.status(404).json({ message: "Sala no encontrada." });
+        }
+        let playerType;
+        if (!roomData.player1Name) {
+            playerType = "player1Name";
+            yield roomRef.update({ player1Name: playerName });
+        }
+        else if (!roomData.player2Name) {
+            playerType = "player2Name";
+            yield roomRef.update({ player2Name: playerName });
+        }
+        else {
+            return res.status(409).json({ message: "La sala está llena." });
+        }
+        // Guardar playerName y userId en Firestore
+        yield firestore.collection("users").doc(userId).set({
+            playerName: playerName,
+            userId: userId,
+            playerType: playerType // Guardar el tipo de jugador
+        });
+        res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
     }
     catch (error) {
         if (error instanceof Error) {
