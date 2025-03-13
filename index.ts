@@ -2,6 +2,8 @@ import express, { Request, Response } from "express";
 import admin from "firebase-admin";
 import * as http from "http";
 import * as dotenv from "dotenv";
+import cors from "cors"; // Importa CORS
+import helmet from "helmet"
 
 dotenv.config();
 
@@ -28,6 +30,12 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(cors({
+    origin: 'http://localhost:3000', // Reemplaza con tu origen
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+}));
+app.use(helmet())
 
 const server = http.createServer(app);
 
@@ -66,17 +74,24 @@ app.post("/api/users", async (req: Request, res: Response) => {
 // Crear sala a nombre del usuario
 app.post("/api/rooms", async (req: Request, res: Response) => {
     try {
-        const { username } = req.body;
+        const { userId } = req.body; // Recibe el userId en lugar del username
+        const userDoc = await firestore.collection("users").doc(userId).get();
+
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: "Usuario no encontrado" });
+        }
+
+        const username = userDoc.data()?.username;
         const rtdbRoomId = generateRtdbRoomId();
 
-        // Crear sala en Firestore con el nombre del usuario como ID
-        await firestore.collection("rooms").doc(username).set({
+        // Crear sala en Firestore con el userId como ID
+        await firestore.collection("rooms").doc(userId).set({
             rtdbRoomId,
             owner: username,
         });
 
         // Crear sala en Realtime Database
-        await db.ref(`rooms/${username}`).set({
+        await db.ref(`rooms/${userId}`).set({ // Usar userId como ID de la sala
             currentGame: {
                 data: {
                     player1Play: null,
@@ -91,7 +106,7 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
             notifications: [],
         });
 
-        res.json({ roomId: username, rtdbRoomId });
+        res.json({ roomId: userId, rtdbRoomId }); // Retornar userId como roomId
     } catch (error) {
         console.error("Error al crear la sala:", error);
         res.status(500).json({ message: "Error interno del servidor" });
@@ -101,7 +116,7 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
 // Unirse a la sala
 app.put("/api/rooms/:roomId/join", async (req: CustomRequest, res: Response) => {
     try {
-        const roomId = req.params.roomId;
+        const roomId = req.params.roomId; // Ahora roomId es userId
         const { playerName, userId } = req.body;
 
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);

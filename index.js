@@ -49,6 +49,8 @@ const express_1 = __importDefault(require("express"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
+const cors_1 = __importDefault(require("cors")); // Importa CORS
+const helmet_1 = __importDefault(require("helmet"));
 dotenv.config();
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
     ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
@@ -66,6 +68,12 @@ const firestore = firebase_admin_1.default.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
+app.use((0, cors_1.default)({
+    origin: 'http://localhost:3000', // Reemplaza con tu origen
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+}));
+app.use((0, helmet_1.default)());
 const server = http.createServer(app);
 function generateRtdbRoomId() {
     return db.ref().push().key;
@@ -84,16 +92,22 @@ app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function*
 }));
 // Crear sala a nombre del usuario
 app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     try {
-        const { username } = req.body;
+        const { userId } = req.body; // Recibe el userId en lugar del username
+        const userDoc = yield firestore.collection("users").doc(userId).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: "Usuario no encontrado" });
+        }
+        const username = (_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.username;
         const rtdbRoomId = generateRtdbRoomId();
-        // Crear sala en Firestore con el nombre del usuario como ID
-        yield firestore.collection("rooms").doc(username).set({
+        // Crear sala en Firestore con el userId como ID
+        yield firestore.collection("rooms").doc(userId).set({
             rtdbRoomId,
             owner: username,
         });
         // Crear sala en Realtime Database
-        yield db.ref(`rooms/${username}`).set({
+        yield db.ref(`rooms/${userId}`).set({
             currentGame: {
                 data: {
                     player1Play: null,
@@ -107,7 +121,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             },
             notifications: [],
         });
-        res.json({ roomId: username, rtdbRoomId });
+        res.json({ roomId: userId, rtdbRoomId }); // Retornar userId como roomId
     }
     catch (error) {
         console.error("Error al crear la sala:", error);
@@ -117,7 +131,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
 // Unirse a la sala
 app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const roomId = req.params.roomId;
+        const roomId = req.params.roomId; // Ahora roomId es userId
         const { playerName, userId } = req.body;
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const snapshot = yield roomRef.once("value");
