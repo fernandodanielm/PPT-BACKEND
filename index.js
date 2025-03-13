@@ -109,6 +109,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
         yield firestore.collection("rooms").doc(userId).set({
             rtdbRoomId,
             owner: username,
+            guestId: null, // Inicializar guestId como null
         });
         yield db.ref(`rooms/${userId}`).set({
             currentGame: {

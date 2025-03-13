@@ -91,6 +91,7 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
         await firestore.collection("rooms").doc(userId).set({
             rtdbRoomId,
             owner: username,
+            guestId: null, // Inicializar guestId como null
         });
 
         await db.ref(`rooms/${userId}`).set({
