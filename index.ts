@@ -79,6 +79,11 @@ app.post("/api/users", async (req: Request, res: Response) => {
 app.post("/api/rooms", async (req: Request, res: Response) => {
     try {
         const { userId } = req.body;
+
+        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+            return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
+        }
+
         const userDoc = await firestore.collection("users").doc(userId).get();
 
         if (!userDoc.exists) {
@@ -91,7 +96,7 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
         await firestore.collection("rooms").doc(userId).set({
             rtdbRoomId,
             owner: username,
-            guestId: null, // Inicializar guestId como null
+            guest: null, // Inicializar guest a null
         });
 
         await db.ref(`rooms/${userId}`).set({
@@ -100,6 +105,8 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
                     player1Play: null,
                     player2Play: null,
                     gameOver: false,
+                    player1Name: username, // Añadir player1Name
+                    player2Name: null, // Añadir player2Name
                 },
                 statistics: {
                     player1: { wins: 0, losses: 0, draws: 0 },
@@ -120,7 +127,60 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
             res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
         }
     }
-}); // Cierre del bloque catch de /api/rooms
+});
+
+app.put("/api/rooms/:roomId/join", async (req: Request, res: Response) => {
+    try {
+        const { roomId } = req.params;
+        const { playerName, userId } = req.body;
+
+        if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+            return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
+        }
+
+        if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
+            return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
+        }
+
+        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+            return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
+        }
+
+        const roomDoc = await firestore.collection("rooms").doc(roomId).get();
+
+        if (!roomDoc.exists) {
+            return res.status(404).json({ message: "Sala no encontrada" });
+        }
+
+        const roomData = roomDoc.data();
+
+        if (roomData?.guest) {
+            return res.status(409).json({ message: "La sala ya tiene un invitado" });
+        }
+
+        await firestore.collection("rooms").doc(roomId).update({
+            guest: playerName,
+        });
+
+        await db.ref(`rooms/${roomId}/currentGame/data`).update({
+            player2Name: playerName,
+        });
+
+        const rtdbRoom = await db.ref(`rooms/${roomId}`).get();
+        const rtdbRoomData = rtdbRoom.val();
+
+        console.log(`Jugador ${playerName} se unió a la sala ${roomId}`);
+        res.json({ currentGame: rtdbRoomData.currentGame });
+    } catch (error) {
+        if (error instanceof Error) {
+            console.error("Error:", error.message);
+            res.status(500).json({ message: "Error interno del servidor", error: error.message });
+        } else {
+            console.error("Error desconocido:", error);
+            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
+        }
+    }
+});
 
 app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => {
     try {
