@@ -76,6 +76,34 @@ app.post("/api/users", async (req: Request, res: Response) => {
     }
 }); // Cierre del bloque catch de /api/users
 
+app.put("/api/users/:userId", async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+
+        // Validaciones básicas
+        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+            return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
+        }
+
+        // Validación de userId en Firestore
+        const userDoc = await firestore.collection("users").doc(userId).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ message: "userId no encontrado." });
+        }
+
+        // userId válido
+        res.status(200).json({ message: "userId válido." });
+    } catch (error) {
+        if (error instanceof Error) {
+            console.error("Error:", error.message);
+            res.status(500).json({ message: "Error interno del servidor", error: error.message });
+        } else {
+            console.error("Error desconocido:", error);
+            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
+        }
+    }
+});
+
 app.post("/api/rooms", async (req: Request, res: Response) => {
     try {
         const { userId } = req.body;
@@ -134,36 +162,54 @@ app.put("/api/rooms/:roomId/join", async (req: Request, res: Response) => {
         const { roomId } = req.params;
         const { playerName, userId } = req.body;
 
+        console.log(`Intento de unión a la sala: roomId=${roomId}, playerName=${playerName}, userId=${userId}`);
+
+        // Validaciones básicas
         if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+            console.log("roomId inválido");
             return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
         }
 
         if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
+            console.log("playerName inválido");
             return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
         }
 
         if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+            console.log("userId inválido");
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
 
-        const roomDoc = await firestore.collection("rooms").doc(roomId).get();
-
-        if (!roomDoc.exists) {
-            return res.status(404).json({ message: "Sala no encontrada" });
+        // Validación de userId en Firestore
+        const userDoc = await firestore.collection("users").doc(userId).get();
+        if (!userDoc.exists) {
+            console.log(`userId ${userId} no encontrado en Firestore`);
+            return res.status(400).json({ message: "userId no encontrado." });
         }
 
-        const roomData = roomDoc.data();
+        // Transacción para asegurar atomicidad
+        await firestore.runTransaction(async (transaction) => {
+            const roomDoc = await transaction.get(firestore.collection("rooms").doc(roomId));
 
-        if (roomData?.guest) {
-            return res.status(409).json({ message: "La sala ya tiene un invitado" });
-        }
+            if (!roomDoc.exists) {
+                console.log(`Sala ${roomId} no encontrada`);
+                return res.status(404).json({ message: "Sala no encontrada" });
+            }
 
-        await firestore.collection("rooms").doc(roomId).update({
-            guest: playerName,
-        });
+            const roomData = roomDoc.data();
 
-        await db.ref(`rooms/${roomId}/currentGame/data`).update({
-            player2Name: playerName,
+            if (roomData?.guest) {
+                console.log(`Sala ${roomId} ya tiene un invitado`);
+                return res.status(409).json({ message: "La sala ya tiene un invitado" });
+            }
+
+            transaction.update(firestore.collection("rooms").doc(roomId), {
+                guest: playerName,
+            });
+
+            await db.ref(`rooms/${roomId}/currentGame/data`).update({
+                player2Name: playerName,
+            });
         });
 
         const rtdbRoom = await db.ref(`rooms/${roomId}`).get();
