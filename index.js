@@ -49,7 +49,7 @@ const express_1 = __importDefault(require("express"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
-const cors_1 = __importDefault(require("cors")); // Importa CORS
+const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 dotenv.config();
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
@@ -69,7 +69,7 @@ const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
-    origin: 'http://localhost:3000', // Reemplaza con tu origen
+    origin: 'http://localhost:3000',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
 }));
@@ -78,35 +78,38 @@ const server = http.createServer(app);
 function generateRtdbRoomId() {
     return db.ref().push().key;
 }
-// Crear usuario en Firestore
 app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { username } = req.body;
         const userRef = yield firestore.collection("users").add({ username });
+        console.log(`Usuario creado con ID: ${userRef.id}`);
         res.json({ id: userRef.id, username });
     }
     catch (error) {
-        console.error("Error al crear el usuario:", error);
-        res.status(500).json({ message: "Error interno del servidor" });
+        if (error instanceof Error) {
+            console.error("Error:", error.message);
+            res.status(500).json({ message: "Error interno del servidor", error: error.message });
+        }
+        else {
+            console.error("Error desconocido:", error);
+            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
+        }
     }
-}));
-// Crear sala a nombre del usuario
+})); // Cierre del bloque catch de /api/users
 app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
-        const { userId } = req.body; // Recibe el userId en lugar del username
+        const { userId } = req.body;
         const userDoc = yield firestore.collection("users").doc(userId).get();
         if (!userDoc.exists) {
             return res.status(404).json({ message: "Usuario no encontrado" });
         }
         const username = (_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.username;
         const rtdbRoomId = generateRtdbRoomId();
-        // Crear sala en Firestore con el userId como ID
         yield firestore.collection("rooms").doc(userId).set({
             rtdbRoomId,
             owner: username,
         });
-        // Crear sala en Realtime Database
         yield db.ref(`rooms/${userId}`).set({
             currentGame: {
                 data: {
@@ -121,58 +124,20 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             },
             notifications: [],
         });
-        res.json({ roomId: userId, rtdbRoomId }); // Retornar userId como roomId
+        console.log(`Sala creada con ID: ${userId}`);
+        res.json({ roomId: userId, rtdbRoomId });
     }
     catch (error) {
-        console.error("Error al crear la sala:", error);
-        res.status(500).json({ message: "Error interno del servidor" });
-    }
-}));
-// Unirse a la sala
-app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    try {
-        const roomId = req.params.roomId; // Ahora roomId es userId
-        const { playerName, userId } = req.body;
-        const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
-        const snapshot = yield roomRef.once("value");
-        if (snapshot.exists()) {
-            const roomData = snapshot.val();
-            if (!roomData.player2Name) {
-                yield roomRef.update({ player2Name: playerName });
-                db.ref(`rooms/${roomId}/currentGame/data/player2Name`).on("value", (snapshot) => {
-                    if (snapshot.exists()) {
-                        const newPlayer2Name = snapshot.val();
-                        db.ref(`rooms/${roomId}/notifications`).push({
-                            type: "playerJoined",
-                            player2Name: newPlayer2Name,
-                        });
-                    }
-                });
-                const updatedRoom = yield db
-                    .ref(`rooms/${roomId}/currentGame`)
-                    .once("value");
-                // Firestore: Actualizar sala con guestId
-                yield firestore.collection("rooms").doc(roomId).update({
-                    guestId: userId,
-                });
-                res.json({ currentGame: updatedRoom.val() });
-                console.log(`Jugador ${playerName} se unió a la sala ${roomId}`);
-            }
-            else {
-                console.log(`La sala ${roomId} ya está llena.`);
-                res.status(409).json({ message: "La sala ya está llena." });
-            }
+        if (error instanceof Error) {
+            console.error("Error:", error.message);
+            res.status(500).json({ message: "Error interno del servidor", error: error.message });
         }
         else {
-            console.log(`Sala ${roomId} no encontrada.`);
-            res.status(404).json({ message: "Sala no encontrada." });
+            console.error("Error desconocido:", error);
+            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
         }
     }
-    catch (error) {
-        console.error("Error al unirse a la sala:", error);
-        res.status(500).json({ message: "Error interno del servidor." });
-    }
-}));
+})); // Cierre del bloque catch de /api/rooms
 app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const roomId = req.params.roomId;
@@ -282,7 +247,7 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
         res.status(500).json({ message: "Error interno del servidor" });
     }
 }));
-// Iniciar el servidor
+//Iniciar el servidor
 server.listen(port, () => {
     console.log(`Servidor iniciado en el puerto ${port}`);
 });
