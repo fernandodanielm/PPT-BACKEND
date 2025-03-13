@@ -45,8 +45,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express")); // Import RequestHandler
-const cors_1 = __importDefault(require("cors"));
+const express_1 = __importDefault(require("express"));
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
@@ -63,32 +62,40 @@ firebase_admin_1.default.initializeApp({
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
 const db = firebase_admin_1.default.database();
+const firestore = firebase_admin_1.default.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
-app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 const server = http.createServer(app);
-function generateNumericRoomId() {
-    return Math.floor(Math.random() * (9999 - 1000 + 1)) + 1000;
+function generateRtdbRoomId() {
+    return db.ref().push().key;
 }
-// Rutas de la API
+// Crear usuario en Firestore
+app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { username } = req.body;
+        const userRef = yield firestore.collection("users").add({ username });
+        res.json({ id: userRef.id, username });
+    }
+    catch (error) {
+        console.error("Error al crear el usuario:", error);
+        res.status(500).json({ message: "Error interno del servidor" });
+    }
+}));
+// Crear sala a nombre del usuario
 app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        let roomId = generateNumericRoomId().toString();
-        const roomRef = db.ref(`rooms/${roomId}`);
-        const snapshot = yield roomRef.once("value");
-        if (snapshot.exists()) {
-            roomId = generateNumericRoomId().toString();
-        }
-        const newRoomRef = db.ref(`rooms/${roomId}`);
-        console.log("Cuerpo de la solicitud:", req.body);
-        const { playerName } = req.body;
-        console.log("Nombre del jugador:", playerName);
-        const newRoom = {
+        const { username } = req.body;
+        const rtdbRoomId = generateRtdbRoomId();
+        // Crear sala en Firestore con el nombre del usuario como ID
+        yield firestore.collection("rooms").doc(username).set({
+            rtdbRoomId,
+            owner: username,
+        });
+        // Crear sala en Realtime Database
+        yield db.ref(`rooms/${username}`).set({
             currentGame: {
                 data: {
-                    player1Name: playerName,
-                    player2Name: "",
                     player1Play: null,
                     player2Play: null,
                     gameOver: false,
@@ -98,25 +105,20 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
                     player2: { wins: 0, losses: 0, draws: 0 },
                 },
             },
-            readyForNextRound: false,
-        };
-        yield newRoomRef.set(newRoom);
-        res.json({ roomId: roomId, currentGame: newRoom.currentGame });
-        console.log(`Sala creada con roomId: ${roomId}`);
+            notifications: [],
+        });
+        res.json({ roomId: username, rtdbRoomId });
     }
     catch (error) {
         console.error("Error al crear la sala:", error);
         res.status(500).json({ message: "Error interno del servidor" });
     }
 }));
+// Unirse a la sala
 app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const roomId = req.params.roomId;
-        const { playerName } = req.body;
-        if (!roomId || !/^\d{4}$/.test(roomId)) { // Improved validation
-            console.error(`roomId inválido: ${roomId}`);
-            return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
-        }
+        const { playerName, userId } = req.body;
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const snapshot = yield roomRef.once("value");
         if (snapshot.exists()) {
@@ -135,6 +137,10 @@ app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 
                 const updatedRoom = yield db
                     .ref(`rooms/${roomId}/currentGame`)
                     .once("value");
+                // Firestore: Actualizar sala con guestId
+                yield firestore.collection("rooms").doc(roomId).update({
+                    guestId: userId,
+                });
                 res.json({ currentGame: updatedRoom.val() });
                 console.log(`Jugador ${playerName} se unió a la sala ${roomId}`);
             }
@@ -157,7 +163,7 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
     try {
         const roomId = req.params.roomId;
         const { playerNumber, move } = req.body;
-        if (!roomId || !/^\d{4}$/.test(roomId)) { // Improved validation
+        if (!roomId || !/^\d{4}$/.test(roomId)) {
             console.error(`roomId inválido: ${roomId}`);
             return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
         }
@@ -172,17 +178,85 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
                 yield roomRef.update({ "currentGame/data/player2Play": move });
             }
             if (roomData.currentGame.data.player1Play && roomData.currentGame.data.player2Play) {
-                // ... (lógica del juego)
-                yield roomRef.update({
-                // ... (actualización de estadísticas y estado del juego)
-                });
-                db.ref(`rooms/${roomId}/notifications`).push({
-                    type: "gameOver",
-                    currentGame: roomData.currentGame,
-                });
+                // Lógica del juego
+                const player1Move = roomData.currentGame.data.player1Play;
+                const player2Move = roomData.currentGame.data.player2Play;
+                let result;
+                if (player1Move === player2Move) {
+                    result = "draw";
+                }
+                else if ((player1Move === "piedra" && player2Move === "tijera") ||
+                    (player1Move === "papel" && player2Move === "piedra") ||
+                    (player1Move === "tijera" && player2Move === "papel")) {
+                    result = "player1Wins";
+                }
+                else {
+                    result = "player2Wins";
+                }
+                // Actualización de estadísticas y estado del juego
+                let updates = {}; // Inicializamos updates con la interfaz Updates
+                if (result === "player1Wins") {
+                    updates.currentGame = {
+                        statistics: {
+                            player1: { wins: roomData.currentGame.statistics.player1.wins + 1, losses: roomData.currentGame.statistics.player1.losses, draws: roomData.currentGame.statistics.player1.draws },
+                            player2: { wins: roomData.currentGame.statistics.player2.losses + 1, losses: roomData.currentGame.statistics.player2.wins, draws: roomData.currentGame.statistics.player2.draws }
+                        },
+                        data: { gameOver: true }
+                    };
+                }
+                else if (result === "player2Wins") {
+                    updates.currentGame = {
+                        statistics: {
+                            player1: { wins: roomData.currentGame.statistics.player1.wins, losses: roomData.currentGame.statistics.player1.losses + 1, draws: roomData.currentGame.statistics.player1.draws },
+                            player2: { wins: roomData.currentGame.statistics.player2.wins + 1, losses: roomData.currentGame.statistics.player2.losses, draws: roomData.currentGame.statistics.player2.draws }
+                        },
+                        data: { gameOver: true }
+                    };
+                }
+                else {
+                    updates.currentGame = {
+                        statistics: {
+                            player1: { wins: roomData.currentGame.statistics.player1.wins, losses: roomData.currentGame.statistics.player1.losses, draws: roomData.currentGame.statistics.player1.draws + 1 },
+                            player2: { wins: roomData.currentGame.statistics.player2.wins, losses: roomData.currentGame.statistics.player2.losses, draws: roomData.currentGame.statistics.player2.draws }
+                        },
+                        data: { gameOver: true }
+                    };
+                }
+                if (updates.currentGame) {
+                    yield roomRef.update(updates.currentGame);
+                }
+                if (updates.currentGame) {
+                    const currentGame = updates.currentGame;
+                    db.ref(`rooms/${roomId}/notifications`).push({
+                        type: "gameOver",
+                        currentGame: {
+                            data: {
+                                player1Play: roomData.currentGame.data.player1Play,
+                                player2Play: roomData.currentGame.data.player2Play,
+                                gameOver: true,
+                            },
+                            statistics: {
+                                player1: {
+                                    wins: currentGame.statistics.player1.wins,
+                                    losses: currentGame.statistics.player1.losses,
+                                    draws: currentGame.statistics.player1.draws,
+                                },
+                                player2: {
+                                    wins: currentGame.statistics.player2.wins,
+                                    losses: currentGame.statistics.player2.losses,
+                                    draws: currentGame.statistics.player2.draws,
+                                },
+                            },
+                        },
+                    });
+                }
+                res.json({ message: "Movimiento registrado y juego actualizado", result });
+                console.log(`Movimiento registrado en la sala ${roomId}, resultado: ${result}`);
             }
-            res.json({ message: "Movimiento registrado" });
-            console.log(`Movimiento registrado en la sala ${roomId}`);
+            else {
+                res.json({ message: "Movimiento registrado" });
+                console.log(`Movimiento registrado en la sala ${roomId}`);
+            }
         }
         else {
             console.log(`Sala ${roomId} no encontrada.`);
