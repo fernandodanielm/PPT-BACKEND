@@ -19,7 +19,7 @@ if (!serviceAccount) {
 }
 
 admin.initializeApp({
-    credential: admin.credential.cert("./key.json"),
+    credential: admin.credential.cert(serviceAccount),
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
 
