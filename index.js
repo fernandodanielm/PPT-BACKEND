@@ -68,11 +68,7 @@ const firestore = admin.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
-app.use((0, cors_1.default)({
-    origin: 'http://localhost:3000',
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    credentials: true,
-}));
+app.use(cors_1.default);
 app.use((0, helmet_1.default)());
 const server = http.createServer(app);
 // Función para generar roomId numérico aleatorio de 4 dígitos
