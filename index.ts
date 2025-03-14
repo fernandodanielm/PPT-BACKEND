@@ -1,5 +1,5 @@
 import express, { Request, Response } from "express";
-import admin from "firebase-admin";
+import * as admin from "firebase-admin";
 import * as http from "http";
 import * as dotenv from "dotenv";
 import cors from "cors";
@@ -19,7 +19,7 @@ if (!serviceAccount) {
 }
 
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
+    credential: admin.credential.cert("./key.json"),
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
 
@@ -39,16 +39,10 @@ app.use(helmet());
 
 const server = http.createServer(app);
 
-interface CustomRequest extends Request {
-    params: {
-        roomId: string;
-    };
+// Función para generar roomId numérico aleatorio de 4 dígitos
+function generateRoomId(): number {
+    return Math.floor(1000 + Math.random() * 9000);
 }
-
-function generateRtdbRoomId(): string {
-    return db.ref().push().key as string;
-}
-
 interface Updates {
     currentGame?: {
         statistics: {
@@ -58,6 +52,15 @@ interface Updates {
         data: { gameOver: boolean };
     };
 }
+// ... (resto del código)
+
+interface CustomRequest extends Request {
+    params: {
+        roomId: string;
+    };
+}
+
+
 
 app.post("/api/users", async (req: Request, res: Response) => {
     try {
@@ -79,22 +82,19 @@ app.post("/api/users", async (req: Request, res: Response) => {
 app.put("/api/users/:userId", async (req: Request, res: Response) => {
     try {
         const { userId } = req.params;
-        const { playerName, roomId } = req.body; // Agregar roomId al cuerpo de la petición
+        const { playerName, roomId } = req.body;
 
         // Validaciones básicas
         if (!userId || typeof userId !== 'string' || userId.trim() === '') {
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
-
         if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
             return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
         }
-
         if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
             return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
         }
 
-        // Obtener la información de la sala desde Realtime Database
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const roomSnapshot = await roomRef.once("value");
         const roomData = roomSnapshot.val();
@@ -115,11 +115,10 @@ app.put("/api/users/:userId", async (req: Request, res: Response) => {
             return res.status(409).json({ message: "La sala está llena." });
         }
 
-        // Guardar playerName y userId en Firestore
         await firestore.collection("users").doc(userId).set({
             playerName: playerName,
             userId: userId,
-            playerType: playerType // Guardar el tipo de jugador
+            playerType: playerType
         });
 
         res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
@@ -133,6 +132,8 @@ app.put("/api/users/:userId", async (req: Request, res: Response) => {
         }
     }
 });
+
+
 
 app.post("/api/rooms", async (req: Request, res: Response) => {
     try {
@@ -149,15 +150,14 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
         }
 
         const username = userDoc.data()?.username;
-        const rtdbRoomId = generateRtdbRoomId();
+        const roomId = generateRoomId().toString(); // Generar roomId numérico
 
-        await firestore.collection("rooms").doc(userId).set({
-            rtdbRoomId,
+        await firestore.collection("rooms").doc(roomId).set({ // Usar roomId como ID de documento
             owner: username,
             guest: null, // Inicializar guest a null
         });
 
-        await db.ref(`rooms/${userId}`).set({
+        await db.ref(`rooms/${roomId}`).set({ // Usar roomId en RTDB
             currentGame: {
                 data: {
                     player1Play: null,
@@ -174,8 +174,8 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
             notifications: [],
         });
 
-        console.log(`Sala creada con ID: ${userId}`);
-        res.json({ roomId: userId, rtdbRoomId });
+        console.log(`Sala creada con ID: ${roomId}`);
+        res.json({ roomId: roomId }); // Devolver roomId numérico
     } catch (error) {
         if (error instanceof Error) {
             console.error("Error:", error.message);
@@ -186,6 +186,8 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
         }
     }
 });
+
+// ... (resto del código)
 
 app.put("/api/rooms/:roomId/join", async (req: Request, res: Response) => {
     try {

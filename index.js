@@ -46,7 +46,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
-const firebase_admin_1 = __importDefault(require("firebase-admin"));
+const admin = __importStar(require("firebase-admin"));
 const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
@@ -59,12 +59,12 @@ if (!serviceAccount) {
     console.error("La variable de entorno FIREBASE_SERVICE_ACCOUNT no está definida o no es un JSON válido.");
     process.exit(1);
 }
-firebase_admin_1.default.initializeApp({
-    credential: firebase_admin_1.default.credential.cert(serviceAccount),
+admin.initializeApp({
+    credential: admin.credential.cert("./key.json"),
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
-const db = firebase_admin_1.default.database();
-const firestore = firebase_admin_1.default.firestore();
+const db = admin.database();
+const firestore = admin.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
@@ -75,8 +75,9 @@ app.use((0, cors_1.default)({
 }));
 app.use((0, helmet_1.default)());
 const server = http.createServer(app);
-function generateRtdbRoomId() {
-    return db.ref().push().key;
+// Función para generar roomId numérico aleatorio de 4 dígitos
+function generateRoomId() {
+    return Math.floor(1000 + Math.random() * 9000);
 }
 app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -99,7 +100,7 @@ app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function*
 app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { userId } = req.params;
-        const { playerName, roomId } = req.body; // Agregar roomId al cuerpo de la petición
+        const { playerName, roomId } = req.body;
         // Validaciones básicas
         if (!userId || typeof userId !== 'string' || userId.trim() === '') {
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
@@ -110,7 +111,6 @@ app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, fu
         if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
             return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
         }
-        // Obtener la información de la sala desde Realtime Database
         const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
         const roomSnapshot = yield roomRef.once("value");
         const roomData = roomSnapshot.val();
@@ -129,11 +129,10 @@ app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, fu
         else {
             return res.status(409).json({ message: "La sala está llena." });
         }
-        // Guardar playerName y userId en Firestore
         yield firestore.collection("users").doc(userId).set({
             playerName: playerName,
             userId: userId,
-            playerType: playerType // Guardar el tipo de jugador
+            playerType: playerType
         });
         res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
     }
@@ -160,13 +159,12 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             return res.status(404).json({ message: "Usuario no encontrado" });
         }
         const username = (_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.username;
-        const rtdbRoomId = generateRtdbRoomId();
-        yield firestore.collection("rooms").doc(userId).set({
-            rtdbRoomId,
+        const roomId = generateRoomId().toString(); // Generar roomId numérico
+        yield firestore.collection("rooms").doc(roomId).set({
             owner: username,
             guest: null, // Inicializar guest a null
         });
-        yield db.ref(`rooms/${userId}`).set({
+        yield db.ref(`rooms/${roomId}`).set({
             currentGame: {
                 data: {
                     player1Play: null,
@@ -182,8 +180,8 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             },
             notifications: [],
         });
-        console.log(`Sala creada con ID: ${userId}`);
-        res.json({ roomId: userId, rtdbRoomId });
+        console.log(`Sala creada con ID: ${roomId}`);
+        res.json({ roomId: roomId }); // Devolver roomId numérico
     }
     catch (error) {
         if (error instanceof Error) {
@@ -196,6 +194,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
     }
 }));
+// ... (resto del código)
 app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { roomId } = req.params;

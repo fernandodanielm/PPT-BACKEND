@@ -150,7 +150,7 @@
     "@firebase/util" "1.11.0"
     tslib "^2.1.0"
 
-"@firebase/database-compat@^2.0.0", "@firebase/database-compat@2.0.4":
+"@firebase/database-compat@^2.0.0", "@firebase/database-compat@^2.0.4", "@firebase/database-compat@2.0.4":
   version "2.0.4"
   resolved "https://registry.npmjs.org/@firebase/database-compat/-/database-compat-2.0.4.tgz"
   integrity sha512-4qsptwZ3DTGNBje56ETItZQyA/HMalOelnLmkC3eR0M6+zkzOHjNHyWUWodW2mqxRKAM0sGkn+aIwYHKZFJXug==
