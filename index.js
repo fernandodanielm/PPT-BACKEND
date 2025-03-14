@@ -181,7 +181,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             notifications: [],
         });
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ roomId: roomId }); // Devolver roomId numérico
+        res.json({ rtdbRoomId: roomId }); // Devolver roomId con el nombre de propiedad correcto
     }
     catch (error) {
         if (error instanceof Error) {

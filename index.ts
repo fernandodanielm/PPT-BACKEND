@@ -175,7 +175,7 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
         });
 
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ roomId: roomId }); // Devolver roomId numérico
+        res.json({ rtdbRoomId: roomId }); // Devolver roomId con el nombre de propiedad correcto
     } catch (error) {
         if (error instanceof Error) {
             console.error("Error:", error.message);
