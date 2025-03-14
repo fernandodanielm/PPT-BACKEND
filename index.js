@@ -95,10 +95,10 @@ app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function*
 })); // Cierre del bloque catch de /api/users
 app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { userId } = req.params;
+        const { id } = req.params;
         const { playerName, roomId } = req.body;
         // Validaciones básicas
-        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        if (!id || typeof id !== 'string' || id.trim() === '') {
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
         if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
@@ -125,9 +125,9 @@ app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, fu
         else {
             return res.status(409).json({ message: "La sala está llena." });
         }
-        yield firestore.collection("users").doc(userId).set({
+        yield firestore.collection("users").doc(id).set({
             playerName: playerName,
-            userId: userId,
+            userId: id,
             playerType: playerType
         });
         res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
@@ -146,11 +146,11 @@ app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, fu
 app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     try {
-        const { userId } = req.body;
-        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        const { id } = req.body;
+        if (!id || typeof id !== 'string' || id.trim() === '') {
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
-        const userDoc = yield firestore.collection("users").doc(userId).get();
+        const userDoc = yield firestore.collection("users").doc(id).get();
         if (!userDoc.exists) {
             return res.status(404).json({ message: "Usuario no encontrado" });
         }
@@ -177,7 +177,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             notifications: [],
         });
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ rtdbRoomId: roomId }); // Devolver roomId con el nombre de propiedad correcto
+        res.json({ roomId: roomId }); // Devolver roomId con el nombre de propiedad correcto
     }
     catch (error) {
         if (error instanceof Error) {
@@ -194,8 +194,8 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
 app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { roomId } = req.params;
-        const { playerName, userId } = req.body;
-        console.log(`Intento de unión a la sala: roomId=${roomId}, playerName=${playerName}, userId=${userId}`);
+        const { playerName, id } = req.body;
+        console.log(`Intento de unión a la sala: roomId=${roomId}, playerName=${playerName}, userId=${id}`);
         // Validaciones básicas
         if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
             console.log("roomId inválido");
@@ -205,27 +205,27 @@ app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 
             console.log("playerName inválido");
             return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
         }
-        if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+        if (!id || typeof id !== 'string' || id.trim() === '') {
             console.log("userId inválido");
             return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
         }
         // Validación de userId en Firestore
-        const userDoc = yield firestore.collection("users").doc(userId).get();
+        const userDoc = yield firestore.collection("users").doc(id).get();
         if (!userDoc.exists) {
-            console.log(`userId ${userId} no encontrado en Firestore`);
+            console.log(`userId ${id} no encontrado en Firestore`);
             return res.status(400).json({ message: "userId no encontrado." });
         }
         // Transacción para asegurar atomicidad
-        yield firestore.runTransaction((transaction) => __awaiter(void 0, void 0, void 0, function* () {
+        const rtdbRoomData = yield firestore.runTransaction((transaction) => __awaiter(void 0, void 0, void 0, function* () {
             const roomDoc = yield transaction.get(firestore.collection("rooms").doc(roomId));
             if (!roomDoc.exists) {
                 console.log(`Sala ${roomId} no encontrada`);
-                return res.status(404).json({ message: "Sala no encontrada" });
+                throw { status: 404, message: "Sala no encontrada" };
             }
             const roomData = roomDoc.data();
             if (roomData === null || roomData === void 0 ? void 0 : roomData.guest) {
                 console.log(`Sala ${roomId} ya tiene un invitado`);
-                return res.status(409).json({ message: "La sala ya tiene un invitado" });
+                throw { status: 409, message: "La sala ya tiene un invitado" };
             }
             transaction.update(firestore.collection("rooms").doc(roomId), {
                 guest: playerName,
@@ -233,14 +233,25 @@ app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 
             yield db.ref(`rooms/${roomId}/currentGame/data`).update({
                 player2Name: playerName,
             });
+            const rtdbRoom = yield db.ref(`rooms/${roomId}`).get();
+            return rtdbRoom.val().currentGame;
         }));
-        const rtdbRoom = yield db.ref(`rooms/${roomId}`).get();
-        const rtdbRoomData = rtdbRoom.val();
         console.log(`Jugador ${playerName} se unió a la sala ${roomId}`);
-        res.json({ currentGame: rtdbRoomData.currentGame });
+        res.json({ currentGame: rtdbRoomData });
     }
     catch (error) {
-        if (error instanceof Error) {
+        if (error && typeof error === 'object' && 'status' in error && 'message' in error) {
+            // Verificar si error.status es un número
+            if (typeof error.status === 'number') {
+                res.status(error.status).json({ message: error.message });
+            }
+            else {
+                // Manejar el caso en que error.status no es un número
+                console.error("Error: status no es un número", error);
+                res.status(500).json({ message: "Error interno del servidor", error: "status no válido" });
+            }
+        }
+        else if (error instanceof Error) {
             console.error("Error:", error.message);
             res.status(500).json({ message: "Error interno del servidor", error: error.message });
         }
