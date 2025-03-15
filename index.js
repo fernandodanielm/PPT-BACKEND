@@ -93,7 +93,7 @@ app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
     }
 })); // Cierre del bloque catch de /api/users
-app.put("/api/users/:userId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+app.put("/api/users/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
         const { playerName, roomId } = req.body;

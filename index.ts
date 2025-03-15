@@ -75,7 +75,7 @@ app.post("/api/users", async (req: Request, res: Response) => {
     }
 }); // Cierre del bloque catch de /api/users
 
-app.put("/api/users/:userId", async (req: Request, res: Response) => {
+app.put("/api/users/:id", async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { playerName, roomId } = req.body;
