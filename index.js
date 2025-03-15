@@ -73,14 +73,22 @@ app.use((0, cors_1.default)({
 }));
 app.use((0, helmet_1.default)());
 const server = http.createServer(app);
-// Función para generar roomId numérico aleatorio de 4 dígitos
+// Función para generar roomId numérico aleatorio de 4 dígitos (con verificación de existencia)
 function generateRoomId() {
-    return Math.floor(1000 + Math.random() * 9000);
+    return __awaiter(this, void 0, void 0, function* () {
+        let roomExists = true;
+        let roomId = ""; // Inicializar roomId con un valor predeterminado
+        while (roomExists) {
+            roomId = Math.floor(1000 + Math.random() * 9000).toString(); // Asignar un valor a roomId
+            const roomDoc = yield firestore.collection("rooms").doc(roomId).get();
+            roomExists = roomDoc.exists;
+        }
+        return roomId;
+    });
 }
 app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { username } = req.body;
-        // Validación del username
         if (!username || typeof username !== 'string' || username.trim() === '') {
             console.error("Error: Username inválido.");
             return res.status(400).json({ message: "Username inválido. Debe ser una cadena no vacía." });
@@ -88,27 +96,13 @@ app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function*
         console.log(`Solicitud de creación de usuario recibida: ${username}`);
         const userRef = yield firestore.collection("users").add({ username });
         console.log(`Usuario creado con ID: ${userRef.id}`);
-        res.status(201).json({ id: userRef.id, username }); // 201 Created
+        res.status(201).json({ id: userRef.id, username });
     }
     catch (error) {
-        if (error instanceof Error) {
-            console.error("Error al crear usuario:", error.message);
-            if (error.message.includes("permission-denied")) {
-                res.status(403).json({ message: "Error de permisos en Firestore.", error: error.message });
-            }
-            else if (error.message.includes("firestore")) {
-                res.status(500).json({ message: "Error de Firestore.", error: error.message });
-            }
-            else {
-                res.status(500).json({ message: "Error interno del servidor.", error: error.message });
-            }
-        }
-        else {
-            console.error("Error desconocido al crear usuario:", error);
-            res.status(500).json({ message: "Error interno del servidor.", error: "Ocurrió un error desconocido." });
-        }
+        console.error("Error al crear usuario:", error);
+        res.status(500).json({ message: "Error interno del servidor", error: error instanceof Error ? error.message : "Ocurrió un error desconocido." });
     }
-})); // Cierre del bloque catch de /api/users
+}));
 app.put("/api/users/:id", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { id } = req.params;
@@ -148,14 +142,8 @@ app.put("/api/users/:id", (req, res) => __awaiter(void 0, void 0, void 0, functi
         res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
     }
     catch (error) {
-        if (error instanceof Error) {
-            console.error("Error:", error.message);
-            res.status(500).json({ message: "Error interno del servidor", error: error.message });
-        }
-        else {
-            console.error("Error desconocido:", error);
-            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
-        }
+        console.error("Error:", error);
+        res.status(500).json({ message: "Error interno del servidor", error: error instanceof Error ? error.message : "Ocurrió un error desconocido." });
     }
 }));
 app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -170,7 +158,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             return res.status(404).json({ message: "Usuario no encontrado" });
         }
         const username = (_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.username;
-        const roomId = generateRoomId().toString();
+        const roomId = yield generateRoomId(); // Usar la función modificada
         yield firestore.collection("rooms").doc(roomId).set({
             owner: username,
             guest: null,
@@ -196,12 +184,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
     }
     catch (error) {
         console.error("Error al crear la sala:", error);
-        if (error instanceof Error) {
-            res.status(500).json({ message: "Error interno del servidor", error: error.message });
-        }
-        else {
-            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
-        }
+        res.status(500).json({ message: "Error interno del servidor", error: error instanceof Error ? error.message : "Ocurrió un error desconocido." });
     }
 }));
 // ... (resto del código)
