@@ -97,9 +97,8 @@ app.put("/api/users/:id", (req, res) => __awaiter(void 0, void 0, void 0, functi
     try {
         const { id } = req.params;
         const { playerName, roomId } = req.body;
-        // Validaciones básicas
         if (!id || typeof id !== 'string' || id.trim() === '') {
-            return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
+            return res.status(400).json({ message: "id inválido. Debe ser una cadena no vacía." });
         }
         if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
             return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
@@ -148,17 +147,17 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
     try {
         const { id } = req.body;
         if (!id || typeof id !== 'string' || id.trim() === '') {
-            return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
+            return res.status(400).json({ message: "id inválido. Debe ser una cadena no vacía." });
         }
         const userDoc = yield firestore.collection("users").doc(id).get();
         if (!userDoc.exists) {
             return res.status(404).json({ message: "Usuario no encontrado" });
         }
         const username = (_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.username;
-        const roomId = generateRoomId().toString(); // Generar roomId numérico
+        const roomId = generateRoomId().toString();
         yield firestore.collection("rooms").doc(roomId).set({
             owner: username,
-            guest: null, // Inicializar guest a null
+            guest: null,
         });
         yield db.ref(`rooms/${roomId}`).set({
             currentGame: {
@@ -166,8 +165,8 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
                     player1Play: null,
                     player2Play: null,
                     gameOver: false,
-                    player1Name: username, // Añadir player1Name
-                    player2Name: null, // Añadir player2Name
+                    player1Name: username,
+                    player2Name: null,
                 },
                 statistics: {
                     player1: { wins: 0, losses: 0, draws: 0 },
@@ -177,7 +176,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             notifications: [],
         });
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ roomId: roomId }); // Devolver roomId con el nombre de propiedad correcto
+        res.json({ roomId: roomId });
     }
     catch (error) {
         if (error instanceof Error) {
