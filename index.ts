@@ -190,7 +190,7 @@ app.post("/api/rooms", async (req: Request, res: Response) => {
         });
 
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ roomId: roomId });
+        res.json({ shortId: roomId, rtdbRoomId: roomId }); // Corrección: devolver shortId y rtdbRoomId
     } catch (error) {
         if (error instanceof Error) {
             console.error("Error:", error.message);

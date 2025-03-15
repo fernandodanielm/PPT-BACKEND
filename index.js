@@ -192,7 +192,7 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             notifications: [],
         });
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ roomId: roomId });
+        res.json({ shortId: roomId, rtdbRoomId: roomId }); // Corrección: devolver shortId y rtdbRoomId
     }
     catch (error) {
         if (error instanceof Error) {
