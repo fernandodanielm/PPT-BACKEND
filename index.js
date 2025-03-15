@@ -52,6 +52,7 @@ const dotenv = __importStar(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 dotenv.config();
+const shortid = require("shortid");
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
     ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
     : null;
@@ -256,6 +257,56 @@ app.put("/api/rooms/:roomId/join", (req, res) => __awaiter(void 0, void 0, void 
             console.error("Error desconocido:", error);
             res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
         }
+    }
+}));
+app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { ownerId, ownerName, guestId, guestName, roomId } = req.body;
+        let generatedRoomId = roomId;
+        if (!roomId) {
+            // Si no hay roomId, es el propietario creando una nueva sala
+            generatedRoomId = shortid.generate();
+            // Guardar datos en Firestore
+            yield firestore.collection("rooms").doc(generatedRoomId).set({
+                owner: ownerId,
+                users: {
+                    [ownerId]: {
+                        userName: ownerName,
+                        role: "owner"
+                    }
+                }
+            });
+            // Guardar datos en RTDB
+            yield db.ref(`rooms/${generatedRoomId}/users/${ownerId}`).set({
+                userName: ownerName,
+                role: "owner"
+            });
+        }
+        if (guestId) {
+            // Si hay guestId, es un invitado uniéndose a una sala existente
+            const roomRef = firestore.collection("rooms").doc(generatedRoomId);
+            const roomDoc = yield roomRef.get();
+            if (!roomDoc.exists) {
+                return res.status(404).send("Sala no encontrada");
+            }
+            // Guardar datos del invitado en Firestore
+            yield roomRef.update({
+                [`users.${guestId}`]: {
+                    userName: guestName,
+                    role: "guest"
+                }
+            });
+            // Guardar datos del invitado en RTDB
+            yield db.ref(`rooms/${generatedRoomId}/users/${guestId}`).set({
+                userName: guestName,
+                role: "guest"
+            });
+        }
+        res.status(200).json({ roomId: generatedRoomId });
+    }
+    catch (error) {
+        console.error("Error al guardar datos:", error);
+        res.status(500).send("Error interno del servidor");
     }
 }));
 app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
