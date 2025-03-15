@@ -192,15 +192,14 @@ app.post("/api/rooms", (req, res) => __awaiter(void 0, void 0, void 0, function*
             notifications: [],
         });
         console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ shortId: roomId, rtdbRoomId: roomId }); // Corrección: devolver shortId y rtdbRoomId
+        res.json({ shortId: roomId, rtdbRoomId: roomId, player1Name: username });
     }
     catch (error) {
+        console.error("Error al crear la sala:", error);
         if (error instanceof Error) {
-            console.error("Error:", error.message);
             res.status(500).json({ message: "Error interno del servidor", error: error.message });
         }
         else {
-            console.error("Error desconocido:", error);
             res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
         }
     }
