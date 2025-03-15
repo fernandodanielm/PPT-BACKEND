@@ -78,18 +78,32 @@ function generateRoomId() {
 app.post("/api/users", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { username } = req.body;
+        // Validación del username
+        if (!username || typeof username !== 'string' || username.trim() === '') {
+            console.error("Error: Username inválido.");
+            return res.status(400).json({ message: "Username inválido. Debe ser una cadena no vacía." });
+        }
+        console.log(`Solicitud de creación de usuario recibida: ${username}`);
         const userRef = yield firestore.collection("users").add({ username });
         console.log(`Usuario creado con ID: ${userRef.id}`);
-        res.json({ id: userRef.id, username });
+        res.status(201).json({ id: userRef.id, username }); // 201 Created
     }
     catch (error) {
         if (error instanceof Error) {
-            console.error("Error:", error.message);
-            res.status(500).json({ message: "Error interno del servidor", error: error.message });
+            console.error("Error al crear usuario:", error.message);
+            if (error.message.includes("permission-denied")) {
+                res.status(403).json({ message: "Error de permisos en Firestore.", error: error.message });
+            }
+            else if (error.message.includes("firestore")) {
+                res.status(500).json({ message: "Error de Firestore.", error: error.message });
+            }
+            else {
+                res.status(500).json({ message: "Error interno del servidor.", error: error.message });
+            }
         }
         else {
-            console.error("Error desconocido:", error);
-            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
+            console.error("Error desconocido al crear usuario:", error);
+            res.status(500).json({ message: "Error interno del servidor.", error: "Ocurrió un error desconocido." });
         }
     }
 })); // Cierre del bloque catch de /api/users
