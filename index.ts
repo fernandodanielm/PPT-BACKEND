@@ -31,7 +31,8 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cors({
-    origin: "https://fernandodanielm.github.io/PPT-FRONTEND/",
+    origin: "https://fernandodanielm.github.io",
+    methods: ["GET", "POST", "PUT", "DELETE"],
 }));
 app.use(helmet());
 
