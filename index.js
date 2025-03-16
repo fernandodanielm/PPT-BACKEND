@@ -70,7 +70,7 @@ const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
 app.use((0, cors_1.default)({
-    origin: "http://localhost:1234",
+    origin: "https://fernandodanielm.github.io/PPT-FRONTEND/",
 }));
 app.use((0, helmet_1.default)());
 const server = http.createServer(app);
