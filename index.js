@@ -51,7 +51,6 @@ const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
-const firebase_1 = require("./firebase");
 dotenv.config();
 const shortid = require("shortid");
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
@@ -66,6 +65,7 @@ admin.initializeApp({
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
 const db = admin.database();
+const firestore = admin.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
@@ -82,7 +82,7 @@ function generateRoomId() {
         let roomId = ""; // Inicializar roomId con un valor predeterminado
         while (roomExists) {
             roomId = Math.floor(1000 + Math.random() * 9000).toString(); // Asignar un valor a roomId
-            const roomDoc = yield firebase_1.firestore.collection("rooms").doc(roomId).get();
+            const roomDoc = yield firestore.collection("rooms").doc(roomId).get();
             roomExists = roomDoc.exists;
         }
         return roomId;
@@ -96,7 +96,7 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
             // Si no hay roomId, es el propietario creando una nueva sala
             generatedRoomId = yield generateRoomId();
             // Guardar datos en Firestore
-            yield firebase_1.firestore.collection("rooms").doc(generatedRoomId).set({
+            yield firestore.collection("rooms").doc(generatedRoomId).set({
                 owner: ownerId,
                 users: {
                     [ownerId]: {
@@ -113,7 +113,7 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
         }
         if (guestId) {
             // Si hay guestId, es un invitado uniéndose a una sala existente
-            const roomRef = firebase_1.firestore.collection("rooms").doc(generatedRoomId);
+            const roomRef = firestore.collection("rooms").doc(generatedRoomId);
             const roomDoc = yield roomRef.get();
             if (!roomDoc.exists) {
                 return res.status(404).send("Sala no encontrada");

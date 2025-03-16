@@ -4,8 +4,8 @@ import * as http from "http";
 import * as dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
-import { firestore } from "./firebase";
-import { collection, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+
+
 
 
 dotenv.config();
@@ -27,7 +27,7 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-
+const firestore = admin.firestore();
 
 const app = express();
 const port = process.env.PORT || 3000;
