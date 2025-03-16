@@ -66,206 +66,6 @@ interface CustomRequest extends Request {
     };
 }
 
-app.post("/api/users", async (req: Request, res: Response) => {
-    try {
-        const { username } = req.body;
-
-        if (!username || typeof username !== 'string' || username.trim() === '') {
-            console.error("Error: Username inválido.");
-            return res.status(400).json({ message: "Username inválido. Debe ser una cadena no vacía." });
-        }
-
-        console.log(`Solicitud de creación de usuario recibida: ${username}`);
-
-        const userRef = await firestore.collection("users").add({ username });
-
-        console.log(`Usuario creado con ID: ${userRef.id}`);
-
-        res.status(201).json({ id: userRef.id, username });
-
-    } catch (error) {
-        console.error("Error al crear usuario:", error);
-        res.status(500).json({ message: "Error interno del servidor", error: error instanceof Error ? error.message : "Ocurrió un error desconocido." });
-    }
-});
-
-app.put("/api/users/:id", async (req: Request, res: Response) => {
-    try {
-        const { id } = req.params;
-        const { playerName, roomId } = req.body;
-
-        if (!id || typeof id !== 'string' || id.trim() === '') {
-            return res.status(400).json({ message: "id inválido. Debe ser una cadena no vacía." });
-        }
-        if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
-            return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
-        }
-        if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
-            return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
-        }
-
-        const roomRef = db.ref(`rooms/${roomId}/currentGame/data`);
-        const roomSnapshot = await roomRef.once("value");
-        const roomData = roomSnapshot.val();
-
-        if (!roomData) {
-            return res.status(404).json({ message: "Sala no encontrada." });
-        }
-
-        let playerType: "player1Name" | "player2Name";
-
-        if (!roomData.player1Name) {
-            playerType = "player1Name";
-            await roomRef.update({ player1Name: playerName });
-        } else if (!roomData.player2Name) {
-            playerType = "player2Name";
-            await roomRef.update({ player2Name: playerName });
-        } else {
-            return res.status(409).json({ message: "La sala está llena." });
-        }
-
-        await firestore.collection("users").doc(id).set({
-            playerName: playerName,
-            userId: id,
-            playerType: playerType
-        });
-
-        res.status(200).json({ message: "Datos del usuario guardados correctamente.", playerType });
-    } catch (error) {
-        console.error("Error:", error);
-        res.status(500).json({ message: "Error interno del servidor", error: error instanceof Error ? error.message : "Ocurrió un error desconocido." });
-    }
-});
-
-
-app.post("/api/rooms", async (req: Request, res: Response) => {
-    try {
-        const { id } = req.body;
-
-        if (!id || typeof id !== 'string' || id.trim() === '') {
-            return res.status(400).json({ message: "id inválido. Debe ser una cadena no vacía." });
-        }
-
-        const userDoc = await firestore.collection("users").doc(id).get();
-
-        if (!userDoc.exists) {
-            return res.status(404).json({ message: "Usuario no encontrado" });
-        }
-
-        const username = userDoc.data()?.username;
-        const roomId = await generateRoomId(); // Usar la función modificada
-
-        await firestore.collection("rooms").doc(roomId).set({
-            owner: username,
-            guest: null,
-        });
-
-        await db.ref(`rooms/${roomId}`).set({
-            currentGame: {
-                data: {
-                    player1Play: null,
-                    player2Play: null,
-                    gameOver: false,
-                    player1Name: username,
-                    player2Name: null,
-                },
-                statistics: {
-                    player1: { wins: 0, losses: 0, draws: 0 },
-                    player2: { wins: 0, losses: 0, draws: 0 },
-                },
-            },
-            notifications: [],
-        });
-
-        console.log(`Sala creada con ID: ${roomId}`);
-        res.json({ shortId: roomId, rtdbRoomId: roomId, player1Name: username });
-    } catch (error) {
-        console.error("Error al crear la sala:", error);
-        res.status(500).json({ message: "Error interno del servidor", error: error instanceof Error ? error.message : "Ocurrió un error desconocido." });
-    }
-});
-
-// ... (resto del código)
-
-app.put("/api/rooms/:roomId/join", async (req: Request, res: Response) => {
-    try {
-        const { roomId } = req.params;
-        const { playerName, id } = req.body;
-
-        console.log(`Intento de unión a la sala: roomId=${roomId}, playerName=${playerName}, userId=${id}`);
-
-        // Validaciones básicas
-        if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
-            console.log("roomId inválido");
-            return res.status(400).json({ message: "roomId inválido. Debe ser una cadena no vacía." });
-        }
-
-        if (!playerName || typeof playerName !== 'string' || playerName.trim() === '') {
-            console.log("playerName inválido");
-            return res.status(400).json({ message: "playerName inválido. Debe ser una cadena no vacía." });
-        }
-
-        if (!id || typeof id !== 'string' || id.trim() === '') {
-            console.log("userId inválido");
-            return res.status(400).json({ message: "userId inválido. Debe ser una cadena no vacía." });
-        }
-
-        // Validación de userId en Firestore
-        const userDoc = await firestore.collection("users").doc(id).get();
-        if (!userDoc.exists) {
-            console.log(`userId ${id} no encontrado en Firestore`);
-            return res.status(400).json({ message: "userId no encontrado." });
-        }
-
-        // Transacción para asegurar atomicidad
-        const rtdbRoomData = await firestore.runTransaction(async (transaction) => {
-            const roomDoc = await transaction.get(firestore.collection("rooms").doc(roomId));
-
-            if (!roomDoc.exists) {
-                console.log(`Sala ${roomId} no encontrada`);
-                throw { status: 404, message: "Sala no encontrada" };
-            }
-
-            const roomData = roomDoc.data();
-
-            if (roomData?.guest) {
-                console.log(`Sala ${roomId} ya tiene un invitado`);
-                throw { status: 409, message: "La sala ya tiene un invitado" };
-            }
-
-            transaction.update(firestore.collection("rooms").doc(roomId), {
-                guest: playerName,
-            });
-
-            await db.ref(`rooms/${roomId}/currentGame/data`).update({
-                player2Name: playerName,
-            });
-
-            const rtdbRoom = await db.ref(`rooms/${roomId}`).get();
-            return rtdbRoom.val().currentGame;
-        });
-
-        console.log(`Jugador ${playerName} se unió a la sala ${roomId}`);
-        res.json({ currentGame: rtdbRoomData });
-    } catch (error) {
-        if (error && typeof error === 'object' && 'status' in error && 'message' in error) {
-            // Verificar si error.status es un número
-            if (typeof error.status === 'number') {
-                res.status(error.status).json({ message: error.message });
-            } else {
-                // Manejar el caso en que error.status no es un número
-                console.error("Error: status no es un número", error);
-                res.status(500).json({ message: "Error interno del servidor", error: "status no válido" });
-            }
-        } else if (error instanceof Error) {
-            console.error("Error:", error.message);
-            res.status(500).json({ message: "Error interno del servidor", error: error.message });
-        } else {
-            console.error("Error desconocido:", error);
-            res.status(500).json({ message: "Error interno del servidor", error: "Ocurrió un error desconocido." });
-        }
-    }
-});
 
 app.post("/api/guardardatos", async (req, res) => {
     try {
@@ -274,7 +74,7 @@ app.post("/api/guardardatos", async (req, res) => {
 
         if (!roomId) {
             // Si no hay roomId, es el propietario creando una nueva sala
-            generatedRoomId = shortid.generate();
+            generatedRoomId = await generateRoomId();
 
             // Guardar datos en Firestore
             await firestore.collection("rooms").doc(generatedRoomId).set({
@@ -325,6 +125,7 @@ app.post("/api/guardardatos", async (req, res) => {
         res.status(500).send("Error interno del servidor");
     }
 });
+
 
 app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => {
     try {
