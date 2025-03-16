@@ -51,6 +51,7 @@ const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
+const firebase_1 = require("./firebase");
 dotenv.config();
 const shortid = require("shortid");
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
@@ -65,7 +66,6 @@ admin.initializeApp({
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
 const db = admin.database();
-const firestore = admin.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
@@ -82,7 +82,7 @@ function generateRoomId() {
         let roomId = ""; // Inicializar roomId con un valor predeterminado
         while (roomExists) {
             roomId = Math.floor(1000 + Math.random() * 9000).toString(); // Asignar un valor a roomId
-            const roomDoc = yield firestore.collection("rooms").doc(roomId).get();
+            const roomDoc = yield firebase_1.firestore.collection("rooms").doc(roomId).get();
             roomExists = roomDoc.exists;
         }
         return roomId;
@@ -96,7 +96,7 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
             // Si no hay roomId, es el propietario creando una nueva sala
             generatedRoomId = yield generateRoomId();
             // Guardar datos en Firestore
-            yield firestore.collection("rooms").doc(generatedRoomId).set({
+            yield firebase_1.firestore.collection("rooms").doc(generatedRoomId).set({
                 owner: ownerId,
                 users: {
                     [ownerId]: {
@@ -113,7 +113,7 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
         }
         if (guestId) {
             // Si hay guestId, es un invitado uniéndose a una sala existente
-            const roomRef = firestore.collection("rooms").doc(generatedRoomId);
+            const roomRef = firebase_1.firestore.collection("rooms").doc(generatedRoomId);
             const roomDoc = yield roomRef.get();
             if (!roomDoc.exists) {
                 return res.status(404).send("Sala no encontrada");
@@ -146,20 +146,22 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
             console.error(`roomId inválido: ${roomId}`);
             return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
         }
-        const roomRef = db.ref(`rooms/${roomId}`);
-        const snapshot = yield roomRef.once("value");
-        const roomData = snapshot.val();
-        if (roomData) {
+        const gameRef = db.ref(`games/${roomId}`); // Referencia a la partida en RTDB
+        const gameSnapshot = yield gameRef.get(); // Obtener los datos de la partida
+        if (gameSnapshot.exists()) {
+            const gameData = gameSnapshot.val();
+            let player1Move = gameData.player1Move;
+            let player2Move = gameData.player2Move;
             if (playerNumber === 1) {
-                yield roomRef.update({ "currentGame/data/player1Play": move });
+                player1Move = move;
+                yield gameRef.update({ player1Move: move }); // Guarda la jugada en RTDB
             }
             else {
-                yield roomRef.update({ "currentGame/data/player2Play": move });
+                player2Move = move;
+                yield gameRef.update({ player2Move: move }); // Guarda la jugada en RTDB
             }
-            if (roomData.currentGame.data.player1Play && roomData.currentGame.data.player2Play) {
-                // Lógica del juego
-                const player1Move = roomData.currentGame.data.player1Play;
-                const player2Move = roomData.currentGame.data.player2Play;
+            if (player1Move && player2Move) {
+                // Lógica del juego con datos de RTDB
                 let result;
                 if (player1Move === player2Move) {
                     result = "draw";
@@ -172,63 +174,12 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
                 else {
                     result = "player2Wins";
                 }
-                // Actualización de estadísticas y estado del juego
-                let updates = {}; // Inicializamos updates con la interfaz Updates
-                if (result === "player1Wins") {
-                    updates.currentGame = {
-                        statistics: {
-                            player1: { wins: roomData.currentGame.statistics.player1.wins + 1, losses: roomData.currentGame.statistics.player1.losses, draws: roomData.currentGame.statistics.player1.draws },
-                            player2: { wins: roomData.currentGame.statistics.player2.losses + 1, losses: roomData.currentGame.statistics.player2.wins, draws: roomData.currentGame.statistics.player2.draws }
-                        },
-                        data: { gameOver: true }
-                    };
-                }
-                else if (result === "player2Wins") {
-                    updates.currentGame = {
-                        statistics: {
-                            player1: { wins: roomData.currentGame.statistics.player1.wins, losses: roomData.currentGame.statistics.player1.losses + 1, draws: roomData.currentGame.statistics.player1.draws },
-                            player2: { wins: roomData.currentGame.statistics.player2.wins + 1, losses: roomData.currentGame.statistics.player2.losses, draws: roomData.currentGame.statistics.player2.draws }
-                        },
-                        data: { gameOver: true }
-                    };
-                }
-                else {
-                    updates.currentGame = {
-                        statistics: {
-                            player1: { wins: roomData.currentGame.statistics.player1.wins, losses: roomData.currentGame.statistics.player1.losses, draws: roomData.currentGame.statistics.player1.draws + 1 },
-                            player2: { wins: roomData.currentGame.statistics.player2.wins, losses: roomData.currentGame.statistics.player2.losses, draws: roomData.currentGame.statistics.player2.draws }
-                        },
-                        data: { gameOver: true }
-                    };
-                }
-                if (updates.currentGame) {
-                    yield roomRef.update(updates.currentGame);
-                }
-                if (updates.currentGame) {
-                    const currentGame = updates.currentGame;
-                    db.ref(`rooms/${roomId}/notifications`).push({
-                        type: "gameOver",
-                        currentGame: {
-                            data: {
-                                player1Play: roomData.currentGame.data.player1Play,
-                                player2Play: roomData.currentGame.data.player2Play,
-                                gameOver: true,
-                            },
-                            statistics: {
-                                player1: {
-                                    wins: currentGame.statistics.player1.wins,
-                                    losses: currentGame.statistics.player1.losses,
-                                    draws: currentGame.statistics.player1.draws,
-                                },
-                                player2: {
-                                    wins: currentGame.statistics.player2.wins,
-                                    losses: currentGame.statistics.player2.losses,
-                                    draws: currentGame.statistics.player2.draws,
-                                },
-                            },
-                        },
-                    });
-                }
+                // Actualización de estadísticas y estado del juego en RTDB
+                yield gameRef.update({
+                    result: result,
+                    gameOver: true,
+                    // Actualizar estadísticas aquí (si es necesario)
+                });
                 res.json({ message: "Movimiento registrado y juego actualizado", result });
                 console.log(`Movimiento registrado en la sala ${roomId}, resultado: ${result}`);
             }

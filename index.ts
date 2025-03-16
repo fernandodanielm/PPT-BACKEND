@@ -4,6 +4,9 @@ import * as http from "http";
 import * as dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
+import { firestore } from "./firebase";
+import { collection, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+
 
 dotenv.config();
 const shortid = require("shortid");
@@ -24,7 +27,7 @@ admin.initializeApp({
 });
 
 const db = admin.database();
-const firestore = admin.firestore();
+
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -138,22 +141,25 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
             return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
         }
 
-        const roomRef = db.ref(`rooms/${roomId}`);
-        const snapshot = await roomRef.once("value");
-        const roomData = snapshot.val();
+        const gameRef = db.ref(`games/${roomId}`); // Referencia a la partida en RTDB
+        const gameSnapshot = await gameRef.get(); // Obtener los datos de la partida
 
-        if (roomData) {
+        if (gameSnapshot.exists()) {
+            const gameData = gameSnapshot.val();
+
+            let player1Move = gameData.player1Move;
+            let player2Move = gameData.player2Move;
+
             if (playerNumber === 1) {
-                await roomRef.update({ "currentGame/data/player1Play": move });
+                player1Move = move;
+                await gameRef.update({ player1Move: move }); // Guarda la jugada en RTDB
             } else {
-                await roomRef.update({ "currentGame/data/player2Play": move });
+                player2Move = move;
+                await gameRef.update({ player2Move: move }); // Guarda la jugada en RTDB
             }
 
-            if (roomData.currentGame.data.player1Play && roomData.currentGame.data.player2Play) {
-                // Lógica del juego
-                const player1Move = roomData.currentGame.data.player1Play;
-                const player2Move = roomData.currentGame.data.player2Play;
-
+            if (player1Move && player2Move) {
+                // Lógica del juego con datos de RTDB
                 let result;
                 if (player1Move === player2Move) {
                     result = "draw";
@@ -167,65 +173,12 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
                     result = "player2Wins";
                 }
 
-                // Actualización de estadísticas y estado del juego
-                let updates: Updates = {}; // Inicializamos updates con la interfaz Updates
-
-                if (result === "player1Wins") {
-                    updates.currentGame = {
-                        statistics: {
-                            player1: { wins: roomData.currentGame.statistics.player1.wins + 1, losses: roomData.currentGame.statistics.player1.losses, draws: roomData.currentGame.statistics.player1.draws },
-                            player2: { wins: roomData.currentGame.statistics.player2.losses + 1, losses: roomData.currentGame.statistics.player2.wins, draws: roomData.currentGame.statistics.player2.draws }
-                        },
-                        data: { gameOver: true }
-                    };
-                } else if (result === "player2Wins") {
-                    updates.currentGame = {
-                        statistics: {
-                            player1: { wins: roomData.currentGame.statistics.player1.wins, losses: roomData.currentGame.statistics.player1.losses + 1, draws: roomData.currentGame.statistics.player1.draws },
-                            player2: { wins: roomData.currentGame.statistics.player2.wins + 1, losses: roomData.currentGame.statistics.player2.losses, draws: roomData.currentGame.statistics.player2.draws }
-                        },
-                        data: { gameOver: true }
-                    };
-                } else {
-                    updates.currentGame = {
-                        statistics: {
-                            player1: { wins: roomData.currentGame.statistics.player1.wins, losses: roomData.currentGame.statistics.player1.losses, draws: roomData.currentGame.statistics.player1.draws + 1 },
-                            player2: { wins: roomData.currentGame.statistics.player2.wins, losses: roomData.currentGame.statistics.player2.losses, draws: roomData.currentGame.statistics.player2.draws }
-                        },
-                        data: { gameOver: true }
-                    };
-                }
-
-                if (updates.currentGame) {
-                    await roomRef.update(updates.currentGame);
-                }
-
-                if (updates.currentGame) {
-                    const currentGame = updates.currentGame;
-
-                    db.ref(`rooms/${roomId}/notifications`).push({
-                        type: "gameOver",
-                        currentGame: {
-                            data: {
-                                player1Play: roomData.currentGame.data.player1Play,
-                                player2Play: roomData.currentGame.data.player2Play,
-                                gameOver: true,
-                            },
-                            statistics: {
-                                player1: {
-                                    wins: currentGame.statistics.player1.wins,
-                                    losses: currentGame.statistics.player1.losses,
-                                    draws: currentGame.statistics.player1.draws,
-                                },
-                                player2: {
-                                    wins: currentGame.statistics.player2.wins,
-                                    losses: currentGame.statistics.player2.losses,
-                                    draws: currentGame.statistics.player2.draws,
-                                },
-                            },
-                        },
-                    });
-                }
+                // Actualización de estadísticas y estado del juego en RTDB
+                await gameRef.update({
+                    result: result,
+                    gameOver: true,
+                    // Actualizar estadísticas aquí (si es necesario)
+                });
 
                 res.json({ message: "Movimiento registrado y juego actualizado", result });
                 console.log(`Movimiento registrado en la sala ${roomId}, resultado: ${result}`);
