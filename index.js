@@ -75,13 +75,13 @@ app.use((0, cors_1.default)({
 }));
 app.use((0, helmet_1.default)());
 const server = http.createServer(app);
-// Función para generar roomId numérico aleatorio de 4 dígitos (con verificación de existencia)
+// Función para generar roomId numérico aleatorio de 4 dígitos (con verificación de existencia en Firestore)
 function generateRoomId() {
     return __awaiter(this, void 0, void 0, function* () {
         let roomExists = true;
-        let roomId = ""; // Inicializar roomId con un valor predeterminado
+        let roomId = "";
         while (roomExists) {
-            roomId = Math.floor(1000 + Math.random() * 9000).toString(); // Asignar un valor a roomId
+            roomId = Math.floor(1000 + Math.random() * 9000).toString();
             const roomDoc = yield firestore.collection("rooms").doc(roomId).get();
             roomExists = roomDoc.exists;
         }
@@ -95,7 +95,7 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
         if (!roomId) {
             // Si no hay roomId, es el propietario creando una nueva sala
             generatedRoomId = yield generateRoomId();
-            // Guardar datos en Firestore
+            // Guardar datos de la sala en Firestore
             yield firestore.collection("rooms").doc(generatedRoomId).set({
                 owner: ownerId,
                 users: {
@@ -105,10 +105,16 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
                     }
                 }
             });
-            // Guardar datos en RTDB
-            yield db.ref(`rooms/${generatedRoomId}/users/${ownerId}`).set({
-                userName: ownerName,
-                role: "owner"
+            // Guardar datos de la sala en RTDB
+            const rtdbRoomRef = db.ref(`rooms/${generatedRoomId}`);
+            yield rtdbRoomRef.set({
+                users: {
+                    [ownerId]: {
+                        userName: ownerName,
+                        role: "owner"
+                    }
+                },
+                games: {} // Inicializar el nodo 'games' como un objeto vacío
             });
         }
         if (guestId) {
@@ -146,10 +152,10 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
             console.error(`roomId inválido: ${roomId}`);
             return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
         }
-        const gameRef = db.ref(`games/${roomId}`); // Referencia a la partida en RTDB
+        const gameRef = db.ref(`rooms/${roomId}/games/current`); // Referencia a la partida actual en RTDB
         const gameSnapshot = yield gameRef.get(); // Obtener los datos de la partida
         if (!gameSnapshot.exists()) {
-            console.log(` Creando nodo games/${roomId} porque no existe.`);
+            console.log(` Creando nodo games/current dentro de rooms/${roomId} porque no existe.`);
             yield gameRef.set({
                 player1Move: null,
                 player2Move: null,

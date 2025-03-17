@@ -5,9 +5,6 @@ import * as dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
 
-
-
-
 dotenv.config();
 const shortid = require("shortid");
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
@@ -41,13 +38,13 @@ app.use(helmet());
 
 const server = http.createServer(app);
 
-// Función para generar roomId numérico aleatorio de 4 dígitos (con verificación de existencia)
+// Función para generar roomId numérico aleatorio de 4 dígitos (con verificación de existencia en Firestore)
 async function generateRoomId(): Promise<string> {
     let roomExists = true;
-    let roomId: string = ""; // Inicializar roomId con un valor predeterminado
+    let roomId: string = "";
 
     while (roomExists) {
-        roomId = Math.floor(1000 + Math.random() * 9000).toString(); // Asignar un valor a roomId
+        roomId = Math.floor(1000 + Math.random() * 9000).toString();
         const roomDoc = await firestore.collection("rooms").doc(roomId).get();
         roomExists = roomDoc.exists;
     }
@@ -70,7 +67,6 @@ interface CustomRequest extends Request {
     };
 }
 
-
 app.post("/api/guardardatos", async (req, res) => {
     try {
         const { ownerId, ownerName, guestId, guestName, roomId } = req.body;
@@ -80,7 +76,7 @@ app.post("/api/guardardatos", async (req, res) => {
             // Si no hay roomId, es el propietario creando una nueva sala
             generatedRoomId = await generateRoomId();
 
-            // Guardar datos en Firestore
+            // Guardar datos de la sala en Firestore
             await firestore.collection("rooms").doc(generatedRoomId).set({
                 owner: ownerId,
                 users: {
@@ -91,10 +87,16 @@ app.post("/api/guardardatos", async (req, res) => {
                 }
             });
 
-            // Guardar datos en RTDB
-            await db.ref(`rooms/${generatedRoomId}/users/${ownerId}`).set({
-                userName: ownerName,
-                role: "owner"
+            // Guardar datos de la sala en RTDB
+            const rtdbRoomRef = db.ref(`rooms/${generatedRoomId}`);
+            await rtdbRoomRef.set({
+                users: {
+                    [ownerId]: {
+                        userName: ownerName,
+                        role: "owner"
+                    }
+                },
+                games: {} // Inicializar el nodo 'games' como un objeto vacío
             });
         }
 
@@ -141,17 +143,18 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
             return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
         }
 
-        const gameRef = db.ref(`games/${roomId}`); // Referencia a la partida en RTDB
+        const gameRef = db.ref(`rooms/${roomId}/games/current`); // Referencia a la partida actual en RTDB
         const gameSnapshot = await gameRef.get(); // Obtener los datos de la partida
+
         if (!gameSnapshot.exists()) {
-            console.log(` Creando nodo games/${roomId} porque no existe.`);
+            console.log(` Creando nodo games/current dentro de rooms/${roomId} porque no existe.`);
             await gameRef.set({
                 player1Move: null,
                 player2Move: null,
                 gameOver: false,
             });
         }
-        
+
         if (gameSnapshot.exists()) {
             const gameData = gameSnapshot.val();
 
@@ -203,7 +206,8 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
         res.status(500).json({ message: "Error interno del servidor" });
     }
 });
- //Iniciar el servidor
+
+//Iniciar el servidor
 server.listen(port, () => {
-   console.log(`Servidor iniciado en el puerto ${port}`);
+    console.log(`Servidor iniciado en el puerto ${port}`);
 });
