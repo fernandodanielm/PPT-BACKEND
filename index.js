@@ -69,9 +69,11 @@ const firestore = admin.firestore();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
+// Configuración de CORS - Se permiten solicitudes solo desde tu dominio de GitHub Pages
 app.use((0, cors_1.default)({
     origin: "https://fernandodanielm.github.io",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Asegúrate de incluir OPTIONS
+    allowedHeaders: ["Content-Type"], // Especifica las cabeceras permitidas
 }));
 app.use((0, helmet_1.default)());
 const server = http.createServer(app);
@@ -212,7 +214,7 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
         res.status(500).json({ message: "Error interno del servidor" });
     }
 }));
-//Iniciar el servidor
+// Iniciar el servidor
 server.listen(port, () => {
     console.log(`Servidor iniciado en el puerto ${port}`);
 });

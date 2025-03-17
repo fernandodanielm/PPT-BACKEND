@@ -30,9 +30,11 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+// Configuración de CORS - Se permiten solicitudes solo desde tu dominio de GitHub Pages
 app.use(cors({
     origin: "https://fernandodanielm.github.io",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Asegúrate de incluir OPTIONS
+    allowedHeaders: ["Content-Type"], // Especifica las cabeceras permitidas
 }));
 app.use(helmet());
 
@@ -207,7 +209,7 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
     }
 });
 
-//Iniciar el servidor
+// Iniciar el servidor
 server.listen(port, () => {
     console.log(`Servidor iniciado en el puerto ${port}`);
 });
