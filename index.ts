@@ -1,3 +1,4 @@
+// backend/app.ts
 import express, { Request, Response } from "express";
 import * as admin from "firebase-admin";
 import * as http from "http";
@@ -98,7 +99,14 @@ app.post("/api/guardardatos", async (req, res) => {
                         role: "owner"
                     }
                 },
-                games: {} // Inicializar el nodo 'games' como un objeto vacío
+                games: {
+                    current: { // Inicializar el nodo 'current' dentro de 'games'
+                        ownerPlay: null,
+                        guestPlay: null,
+                        result: null,
+                        gameOver: false,
+                    }
+                }
             });
         }
 
@@ -125,6 +133,15 @@ app.post("/api/guardardatos", async (req, res) => {
                 userName: guestName,
                 role: "guest"
             });
+
+            // Inicializar jugadas del invitado en RTDB (si la sala ya existe)
+            const gameRef = db.ref(`rooms/${generatedRoomId}/games/current`);
+            const gameSnapshot = await gameRef.get();
+            if (gameSnapshot.exists()) {
+                await gameRef.update({ guestPlay: null });
+            } else {
+                await gameRef.set({ ownerPlay: null, guestPlay: null, result: null, gameOver: false });
+            }
         }
 
         res.status(200).json({ roomId: generatedRoomId });
@@ -151,53 +168,54 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
         if (!gameSnapshot.exists()) {
             console.log(` Creando nodo games/current dentro de rooms/${roomId} porque no existe.`);
             await gameRef.set({
-                player1Move: null,
-                player2Move: null,
+                ownerPlay: null,
+                guestPlay: null,
+                result: null,
                 gameOver: false,
             });
         }
 
         if (gameSnapshot.exists()) {
             const gameData = gameSnapshot.val();
-
-            let player1Move = gameData.player1Move;
-            let player2Move = gameData.player2Move;
+            let ownerPlay = gameData.ownerPlay;
+            let guestPlay = gameData.guestPlay;
 
             if (playerNumber === 1) {
-                player1Move = move;
-                await gameRef.update({ player1Move: move }); // Guarda la jugada en RTDB
-            } else {
-                player2Move = move;
-                await gameRef.update({ player2Move: move }); // Guarda la jugada en RTDB
+                ownerPlay = move;
+                await gameRef.update({ ownerPlay: move }); // Guarda la jugada del owner en RTDB
+                console.log(`Movimiento del owner registrado en la sala ${roomId}: ${move}`);
+            } else if (playerNumber === 2) {
+                guestPlay = move;
+                await gameRef.update({ guestPlay: move }); // Guarda la jugada del guest en RTDB
+                console.log(`Movimiento del guest registrado en la sala ${roomId}: ${move}`);
             }
 
-            if (player1Move && player2Move) {
+            if (ownerPlay && guestPlay) {
                 // Lógica del juego con datos de RTDB
                 let result;
-                if (player1Move === player2Move) {
+                if (ownerPlay === guestPlay) {
                     result = "draw";
                 } else if (
-                    (player1Move === "piedra" && player2Move === "tijera") ||
-                    (player1Move === "papel" && player2Move === "piedra") ||
-                    (player1Move === "tijera" && player2Move === "papel")
+                    (ownerPlay === "piedra" && guestPlay === "tijera") ||
+                    (ownerPlay === "papel" && guestPlay === "piedra") ||
+                    (ownerPlay === "tijera" && guestPlay === "papel")
                 ) {
-                    result = "player1Wins";
+                    result = "ownerWins";
                 } else {
-                    result = "player2Wins";
+                    result = "guestWins";
                 }
 
-                // Actualización de estadísticas y estado del juego en RTDB
+                // Actualización del resultado y estado del juego en RTDB
                 await gameRef.update({
                     result: result,
                     gameOver: true,
-                    // Actualizar estadísticas aquí (si es necesario)
                 });
 
                 res.json({ message: "Movimiento registrado y juego actualizado", result });
-                console.log(`Movimiento registrado en la sala ${roomId}, resultado: ${result}`);
+                console.log(`Resultado del juego en la sala ${roomId}: ${result}`);
             } else {
                 res.json({ message: "Movimiento registrado" });
-                console.log(`Movimiento registrado en la sala ${roomId}`);
+                console.log(`Movimiento registrado en la sala ${roomId}, esperando al otro jugador.`);
             }
         } else {
             console.log(`Sala ${roomId} no encontrada.`);
