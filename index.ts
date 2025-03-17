@@ -143,7 +143,15 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
 
         const gameRef = db.ref(`games/${roomId}`); // Referencia a la partida en RTDB
         const gameSnapshot = await gameRef.get(); // Obtener los datos de la partida
-
+        if (!gameSnapshot.exists()) {
+            console.log(` Creando nodo games/${roomId} porque no existe.`);
+            await gameRef.set({
+                player1Move: null,
+                player2Move: null,
+                gameOver: false,
+            });
+        }
+        
         if (gameSnapshot.exists()) {
             const gameData = gameSnapshot.val();
 
