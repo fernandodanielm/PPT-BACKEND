@@ -51,6 +51,9 @@ const http = __importStar(require("http"));
 const dotenv = __importStar(require("dotenv"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
+const database_1 = require("firebase/database");
+const app_1 = require("firebase/app");
+const firebaseconfig_1 = require("./firebaseconfig");
 dotenv.config();
 const shortid = require("shortid");
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
@@ -64,8 +67,10 @@ admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
     databaseURL: "https://desafio-ppt-e6f00-default-rtdb.firebaseio.com",
 });
+const firebaseApp = (0, app_1.initializeApp)(firebaseconfig_1.firebaseConfig);
 const db = admin.database();
 const firestore = admin.firestore();
+const rtdb = (0, database_1.getDatabase)(firebaseApp);
 const app = (0, express_1.default)();
 const port = process.env.PORT || 3000;
 app.use(express_1.default.json());
@@ -164,84 +169,86 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
 }));
 app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
+        console.log("--- Inicio de la solicitud PUT /api/rooms/:roomId/move ---");
+        console.log("roomId:", req.params.roomId);
+        console.log("req.body:", req.body);
         const roomId = req.params.roomId;
         const { playerNumber, move } = req.body;
-        if (!roomId || !/^\d{4}$/.test(roomId)) {
-            console.error(`roomId inválido: ${roomId}`);
-            return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
+        // Validación básica de los datos recibidos
+        if (!roomId || !playerNumber || !move) {
+            console.error("Datos incompletos en la solicitud.");
+            return res.status(400).json({ message: "Datos incompletos." });
         }
-        const gameRef = db.ref(`rooms/${roomId}/games/current`);
-        const usersRef = db.ref(`rooms/${roomId}/users`);
-        const usersSnapshot = yield usersRef.get();
-        const usersData = usersSnapshot.val();
-        let playerId;
-        if (usersData) {
-            for (const id in usersData) {
-                if (usersData[id].role === (playerNumber === 1 ? 'owner' : 'guest')) {
-                    playerId = id;
-                    break;
-                }
-            }
+        // Validación del número de jugador
+        if (playerNumber !== 1 && playerNumber !== 2) {
+            console.error("Número de jugador inválido:", playerNumber);
+            return res.status(400).json({ message: "Número de jugador inválido." });
         }
-        if (!playerId) {
-            return res.status(400).json({ message: "Número de jugador inválido o jugador no encontrado en la sala." });
-        }
+        // Validación del movimiento
         const validMoves = ["piedra", "papel", "tijera"];
         if (!validMoves.includes(move)) {
+            console.error("Movimiento inválido:", move);
             return res.status(400).json({ message: "Movimiento inválido." });
         }
-        const updatePayload = {};
+        // Obtener el estado actual del juego desde la base de datos
+        const gameRef = (0, database_1.ref)(rtdb, `rooms/${roomId}/games/current`);
+        const snapshot = yield (0, database_1.get)(gameRef);
+        const gameData = snapshot.val();
+        if (!gameData) {
+            console.error("No se encontró el juego en la base de datos.");
+            return res.status(404).json({ message: "Juego no encontrado." });
+        }
+        // Verificar si el jugador ya hizo su movimiento
+        if (playerNumber === 1 && gameData.player1Move) {
+            console.error("El jugador 1 ya hizo su movimiento.");
+            return res.status(400).json({ message: "El jugador 1 ya hizo su movimiento." });
+        }
+        if (playerNumber === 2 && gameData.player2Move) {
+            console.error("El jugador 2 ya hizo su movimiento.");
+            return res.status(400).json({ message: "El jugador 2 ya hizo su movimiento." });
+        }
+        // Actualizar el movimiento del jugador en la base de datos
+        const updateData = {};
         if (playerNumber === 1) {
-            updatePayload.player1Move = move;
+            updateData.player1Move = move;
         }
-        else if (playerNumber === 2) {
-            updatePayload.player2Move = move;
+        else {
+            updateData.player2Move = move;
         }
-        yield gameRef.update(updatePayload);
-        console.log(`Movimiento del jugador ${playerNumber} registrado en la sala ${roomId}: ${move}`);
-        const gameSnapshot = yield gameRef.get();
-        const gameData = gameSnapshot.val();
-        if (gameData && gameData.player1Move && gameData.player2Move) {
+        yield (0, database_1.update)(gameRef, updateData);
+        // Obtener el estado actualizado del juego después de la actualización
+        const updatedSnapshot = yield (0, database_1.get)(gameRef);
+        const updatedGameData = updatedSnapshot.val();
+        // Verificar si ambos jugadores han hecho su movimiento
+        if (updatedGameData.player1Move && updatedGameData.player2Move) {
+            // Lógica para determinar el ganador
+            const player1Move = updatedGameData.player1Move;
+            const player2Move = updatedGameData.player2Move;
             let result;
-            const ownerId = Object.keys(usersData || {}).find(id => { var _a; return ((_a = usersData === null || usersData === void 0 ? void 0 : usersData[id]) === null || _a === void 0 ? void 0 : _a.role) === 'owner'; });
-            const guestId = Object.keys(usersData || {}).find(id => { var _a; return ((_a = usersData === null || usersData === void 0 ? void 0 : usersData[id]) === null || _a === void 0 ? void 0 : _a.role) === 'guest'; });
-            let ownerMove = (playerNumber === 1) ? move : gameData.player1Move;
-            let guestMove = (playerNumber === 2) ? move : gameData.player2Move;
-            const getPlayerMove = (playerRole) => {
-                if (playerRole === 'owner')
-                    return gameData.player1Move;
-                if (playerRole === 'guest')
-                    return gameData.player2Move;
-                return null;
-            };
-            const ownerCurrentMove = getPlayerMove('owner');
-            const guestCurrentMove = getPlayerMove('guest');
-            if (ownerCurrentMove === guestCurrentMove) {
+            if (player1Move === player2Move) {
                 result = "draw";
             }
-            else if ((ownerCurrentMove === "piedra" && guestCurrentMove === "tijera") ||
-                (ownerCurrentMove === "papel" && guestCurrentMove === "piedra") ||
-                (ownerCurrentMove === "tijera" && guestCurrentMove === "papel")) {
+            else if ((player1Move === "piedra" && player2Move === "tijera") ||
+                (player1Move === "papel" && player2Move === "piedra") ||
+                (player1Move === "tijera" && player2Move === "papel")) {
                 result = "ownerWins";
             }
             else {
                 result = "guestWins";
             }
-            yield gameRef.update({
+            // Actualizar el resultado y gameOver en la base de datos
+            yield (0, database_1.update)(gameRef, {
                 result: result,
                 gameOver: true,
             });
-            res.json({ message: "Movimiento registrado y juego actualizado", result });
-            console.log(`Resultado del juego en la sala ${roomId}: ${result}`);
+            console.log("Resultado del juego:", result);
         }
-        else {
-            res.json({ message: "Movimiento registrado, esperando al otro jugador." });
-            console.log(`Movimiento registrado en la sala ${roomId}, esperando al otro jugador.`);
-        }
+        console.log("--- Fin de la solicitud PUT /api/rooms/:roomId/move ---");
+        res.json({ message: "Movimiento registrado con éxito." });
     }
     catch (error) {
-        console.error("Error al registrar el movimiento:", error);
-        res.status(500).json({ message: "Error interno del servidor" });
+        console.error("Error en /api/rooms/:roomId/move:", error);
+        res.status(500).json({ message: "Error interno del servidor." });
     }
 }));
 app.post("/api/rooms/:roomId/reset", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
