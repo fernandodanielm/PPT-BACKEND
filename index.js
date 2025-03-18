@@ -45,7 +45,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// backend/app.ts
 const express_1 = __importDefault(require("express"));
 const admin = __importStar(require("firebase-admin"));
 const http = __importStar(require("http"));
@@ -150,7 +149,7 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
             const gameRef = db.ref(`rooms/${generatedRoomId}/games/current`);
             const gameSnapshot = yield gameRef.get();
             if (gameSnapshot.exists()) {
-                yield gameRef.update({ player2Move: null });
+                yield gameRef.update({ player2Move: null, result: null, gameOver: false });
             }
             else {
                 yield gameRef.set({ player1Move: null, player2Move: null, result: null, gameOver: false });
@@ -172,13 +171,31 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
             return res.status(400).json({ message: "roomId inválido. Debe ser un número de 4 dígitos." });
         }
         const gameRef = db.ref(`rooms/${roomId}/games/current`);
-        // Actualizar el movimiento ANTES de obtener los datos para la verificación
+        const usersRef = db.ref(`rooms/${roomId}/users`);
+        const usersSnapshot = yield usersRef.get();
+        const usersData = usersSnapshot.val();
+        let playerId;
+        if (usersData) {
+            for (const id in usersData) {
+                if (usersData[id].role === (playerNumber === 1 ? 'owner' : 'guest')) {
+                    playerId = id;
+                    break;
+                }
+            }
+        }
+        if (!playerId) {
+            return res.status(400).json({ message: "Número de jugador inválido o jugador no encontrado en la sala." });
+        }
+        const validMoves = ["piedra", "papel", "tijera"];
+        if (!validMoves.includes(move)) {
+            return res.status(400).json({ message: "Movimiento inválido." });
+        }
         const updatePayload = {};
         if (playerNumber === 1) {
-            updatePayload.player1Move = move; // Hacer un type assertion aquí
+            updatePayload.player1Move = move;
         }
         else if (playerNumber === 2) {
-            updatePayload.player2Move = move; // Hacer un type assertion aquí
+            updatePayload.player2Move = move;
         }
         yield gameRef.update(updatePayload);
         console.log(`Movimiento del jugador ${playerNumber} registrado en la sala ${roomId}: ${move}`);
@@ -186,16 +203,29 @@ app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 
         const gameData = gameSnapshot.val();
         if (gameData && gameData.player1Move && gameData.player2Move) {
             let result;
-            if (gameData.player1Move === gameData.player2Move) {
+            const ownerId = Object.keys(usersData || {}).find(id => { var _a; return ((_a = usersData === null || usersData === void 0 ? void 0 : usersData[id]) === null || _a === void 0 ? void 0 : _a.role) === 'owner'; });
+            const guestId = Object.keys(usersData || {}).find(id => { var _a; return ((_a = usersData === null || usersData === void 0 ? void 0 : usersData[id]) === null || _a === void 0 ? void 0 : _a.role) === 'guest'; });
+            let ownerMove = (playerNumber === 1) ? move : gameData.player1Move;
+            let guestMove = (playerNumber === 2) ? move : gameData.player2Move;
+            const getPlayerMove = (playerRole) => {
+                if (playerRole === 'owner')
+                    return gameData.player1Move;
+                if (playerRole === 'guest')
+                    return gameData.player2Move;
+                return null;
+            };
+            const ownerCurrentMove = getPlayerMove('owner');
+            const guestCurrentMove = getPlayerMove('guest');
+            if (ownerCurrentMove === guestCurrentMove) {
                 result = "draw";
             }
-            else if ((gameData.player1Move === "piedra" && gameData.player2Move === "tijera") ||
-                (gameData.player1Move === "papel" && gameData.player2Move === "piedra") ||
-                (gameData.player1Move === "tijera" && gameData.player2Move === "papel")) {
-                result = "ownerWins"; // Asumiendo que playerNumber 1 es el owner
+            else if ((ownerCurrentMove === "piedra" && guestCurrentMove === "tijera") ||
+                (ownerCurrentMove === "papel" && guestCurrentMove === "piedra") ||
+                (ownerCurrentMove === "tijera" && guestCurrentMove === "papel")) {
+                result = "ownerWins";
             }
             else {
-                result = "guestWins"; // Asumiendo que playerNumber 2 es el guest
+                result = "guestWins";
             }
             yield gameRef.update({
                 result: result,

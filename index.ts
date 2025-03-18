@@ -1,4 +1,3 @@
-// backend/app.ts
 import express, { Request, Response } from "express";
 import * as admin from "firebase-admin";
 import * as http from "http";
@@ -146,7 +145,7 @@ app.post("/api/guardardatos", async (req, res) => {
             const gameRef = db.ref(`rooms/${generatedRoomId}/games/current`);
             const gameSnapshot = await gameRef.get();
             if (gameSnapshot.exists()) {
-                await gameRef.update({ player2Move: null });
+                await gameRef.update({ player2Move: null, result: null, gameOver: false });
             } else {
                 await gameRef.set({ player1Move: null, player2Move: null, result: null, gameOver: false });
             }
@@ -171,13 +170,34 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
         }
 
         const gameRef = db.ref(`rooms/${roomId}/games/current`);
+        const usersRef = db.ref(`rooms/${roomId}/users`);
+        const usersSnapshot = await usersRef.get();
+        const usersData = usersSnapshot.val();
 
-        // Actualizar el movimiento ANTES de obtener los datos para la verificación
+        let playerId: string | undefined;
+        if (usersData) {
+            for (const id in usersData) {
+                if (usersData[id].role === (playerNumber === 1 ? 'owner' : 'guest')) {
+                    playerId = id;
+                    break;
+                }
+            }
+        }
+
+        if (!playerId) {
+            return res.status(400).json({ message: "Número de jugador inválido o jugador no encontrado en la sala." });
+        }
+
+        const validMoves: Jugada[] = ["piedra", "papel", "tijera"];
+        if (!validMoves.includes(move as Jugada)) {
+            return res.status(400).json({ message: "Movimiento inválido." });
+        }
+
         const updatePayload: { player1Move?: Jugada | null; player2Move?: Jugada | null } = {};
         if (playerNumber === 1) {
-            updatePayload.player1Move = move as Jugada; // Hacer un type assertion aquí
+            updatePayload.player1Move = move as Jugada;
         } else if (playerNumber === 2) {
-            updatePayload.player2Move = move as Jugada; // Hacer un type assertion aquí
+            updatePayload.player2Move = move as Jugada;
         }
         await gameRef.update(updatePayload);
         console.log(`Movimiento del jugador ${playerNumber} registrado en la sala ${roomId}: ${move}`);
@@ -187,16 +207,32 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
 
         if (gameData && gameData.player1Move && gameData.player2Move) {
             let result: "draw" | "ownerWins" | "guestWins";
-            if (gameData.player1Move === gameData.player2Move) {
+
+            const ownerId = Object.keys(usersData || {}).find(id => usersData?.[id]?.role === 'owner');
+            const guestId = Object.keys(usersData || {}).find(id => usersData?.[id]?.role === 'guest');
+
+            let ownerMove = (playerNumber === 1) ? move : gameData.player1Move;
+            let guestMove = (playerNumber === 2) ? move : gameData.player2Move;
+
+            const getPlayerMove = (playerRole: 'owner' | 'guest') => {
+                if (playerRole === 'owner') return gameData.player1Move;
+                if (playerRole === 'guest') return gameData.player2Move;
+                return null;
+            };
+
+            const ownerCurrentMove = getPlayerMove('owner');
+            const guestCurrentMove = getPlayerMove('guest');
+
+            if (ownerCurrentMove === guestCurrentMove) {
                 result = "draw";
             } else if (
-                (gameData.player1Move === "piedra" && gameData.player2Move === "tijera") ||
-                (gameData.player1Move === "papel" && gameData.player2Move === "piedra") ||
-                (gameData.player1Move === "tijera" && gameData.player2Move === "papel")
+                (ownerCurrentMove === "piedra" && guestCurrentMove === "tijera") ||
+                (ownerCurrentMove === "papel" && guestCurrentMove === "piedra") ||
+                (ownerCurrentMove === "tijera" && guestCurrentMove === "papel")
             ) {
-                result = "ownerWins"; // Asumiendo que playerNumber 1 es el owner
+                result = "ownerWins";
             } else {
-                result = "guestWins"; // Asumiendo que playerNumber 2 es el guest
+                result = "guestWins";
             }
 
             await gameRef.update({
