@@ -60,7 +60,12 @@ interface Updates {
             player1: { wins: number; losses: number; draws: number };
             player2: { wins: number; losses: number; draws: number };
         };
-        data: { gameOver: boolean };
+        data: {
+            gameOver: boolean;
+            player1Move: "piedra" | "papel" | "tijera" | null;
+            player2Move: "piedra" | "papel" | "tijera" | null;
+            result: "draw" | "ownerWins" | "guestWins" | null;
+        };
     };
 }
 
@@ -101,8 +106,8 @@ app.post("/api/guardardatos", async (req, res) => {
                 },
                 games: {
                     current: { // Inicializar el nodo 'current' dentro de 'games'
-                        ownerPlay: null,
-                        guestPlay: null,
+                        player1Move: null,
+                        player2Move: null,
                         result: null,
                         gameOver: false,
                     }
@@ -138,9 +143,9 @@ app.post("/api/guardardatos", async (req, res) => {
             const gameRef = db.ref(`rooms/${generatedRoomId}/games/current`);
             const gameSnapshot = await gameRef.get();
             if (gameSnapshot.exists()) {
-                await gameRef.update({ guestPlay: null });
+                await gameRef.update({ player2Move: null });
             } else {
-                await gameRef.set({ ownerPlay: null, guestPlay: null, result: null, gameOver: false });
+                await gameRef.set({ player1Move: null, player2Move: null, result: null, gameOver: false });
             }
         }
 
@@ -168,8 +173,8 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
         if (!gameSnapshot.exists()) {
             console.log(` Creando nodo games/current dentro de rooms/${roomId} porque no existe.`);
             await gameRef.set({
-                ownerPlay: null,
-                guestPlay: null,
+                player1Move: null,
+                player2Move: null,
                 result: null,
                 gameOver: false,
             });
@@ -177,32 +182,32 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
 
         if (gameSnapshot.exists()) {
             const gameData = gameSnapshot.val();
-            let ownerPlay = gameData.ownerPlay;
-            let guestPlay = gameData.guestPlay;
+            let player1Move = gameData.player1Move;
+            let player2Move = gameData.player2Move;
 
             if (playerNumber === 1) {
-                ownerPlay = move;
-                await gameRef.update({ ownerPlay: move }); // Guarda la jugada del owner en RTDB
-                console.log(`Movimiento del owner registrado en la sala ${roomId}: ${move}`);
+                player1Move = move;
+                await gameRef.update({ player1Move: move }); // Guarda la jugada del jugador 1 en RTDB
+                console.log(`Movimiento del jugador 1 registrado en la sala ${roomId}: ${move}`);
             } else if (playerNumber === 2) {
-                guestPlay = move;
-                await gameRef.update({ guestPlay: move }); // Guarda la jugada del guest en RTDB
-                console.log(`Movimiento del guest registrado en la sala ${roomId}: ${move}`);
+                player2Move = move;
+                await gameRef.update({ player2Move: move }); // Guarda la jugada del jugador 2 en RTDB
+                console.log(`Movimiento del jugador 2 registrado en la sala ${roomId}: ${move}`);
             }
 
-            if (ownerPlay && guestPlay) {
+            if (player1Move && player2Move) {
                 // Lógica del juego con datos de RTDB
-                let result;
-                if (ownerPlay === guestPlay) {
+                let result: "draw" | "ownerWins" | "guestWins";
+                if (player1Move === player2Move) {
                     result = "draw";
                 } else if (
-                    (ownerPlay === "piedra" && guestPlay === "tijera") ||
-                    (ownerPlay === "papel" && guestPlay === "piedra") ||
-                    (ownerPlay === "tijera" && guestPlay === "papel")
+                    (player1Move === "piedra" && player2Move === "tijera") ||
+                    (player1Move === "papel" && player2Move === "piedra") ||
+                    (player1Move === "tijera" && player2Move === "papel")
                 ) {
-                    result = "ownerWins";
+                    result = "ownerWins"; // Asumiendo que playerNumber 1 es el owner
                 } else {
-                    result = "guestWins";
+                    result = "guestWins"; // Asumiendo que playerNumber 2 es el guest
                 }
 
                 // Actualización del resultado y estado del juego en RTDB
@@ -224,6 +229,31 @@ app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => 
     } catch (error) {
         console.error("Error al registrar el movimiento:", error);
         res.status(500).json({ message: "Error interno del servidor" });
+    }
+});
+
+app.post("/api/rooms/:roomId/reset", async (req: CustomRequest, res: Response) => {
+    try {
+        const roomId = req.params.roomId;
+
+        if (!roomId || !/^\d{4}$/.test(roomId)) {
+            return res.status(400).json({ message: "roomId inválido." });
+        }
+
+        const gameRef = db.ref(`rooms/${roomId}/games/current`);
+        await gameRef.update({
+            player1Move: null,
+            player2Move: null,
+            result: null,
+            gameOver: false,
+        });
+
+        res.json({ message: `Juego en la sala ${roomId} reseteado.` });
+        console.log(`Juego en la sala ${roomId} reseteado.`);
+
+    } catch (error) {
+        console.error("Error al resetear el juego:", error);
+        res.status(500).json({ message: "Error interno al resetear el juego." });
     }
 });
 
