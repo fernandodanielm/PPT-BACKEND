@@ -161,6 +161,44 @@ app.post("/api/guardardatos", async (req, res) => {
     }
 });
 
+app.post("/api/guardardatos/:roomId", async (req: CustomRequest, res: Response) => {
+    try {
+        const roomId = req.params.roomId;
+        const { guestId, guestName } = req.body;
+
+        const roomRef = firestore.collection("rooms").doc(roomId);
+        const roomDoc = await roomRef.get();
+
+        if (!roomDoc.exists) {
+            return res.status(404).send("Sala no encontrada");
+        }
+
+        await roomRef.update({
+            [`users.${guestId}`]: {
+                userName: guestName,
+                role: "guest"
+            }
+        });
+
+        await db.ref(`rooms/${roomId}/users/${guestId}`).set({
+            userName: guestName,
+            role: "guest"
+        });
+
+        const gameRef = db.ref(`rooms/${roomId}/games/current`);
+        const gameSnapshot = await gameRef.get();
+        if (gameSnapshot.exists()) {
+            await gameRef.update({ player2Move: null, result: null, gameOver: false });
+        } else {
+            await gameRef.set({ player1Move: null, player2Move: null, result: null, gameOver: false });
+        }
+
+        res.status(200).json({ roomId: roomId });
+    } catch (error) {
+        console.error("Error al unirse a la sala:", error);
+        res.status(500).send("Error interno del servidor");
+    }
+});
 
 app.put("/api/rooms/:roomId/move", async (req: CustomRequest, res: Response) => {
     try {

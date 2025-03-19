@@ -167,6 +167,40 @@ app.post("/api/guardardatos", (req, res) => __awaiter(void 0, void 0, void 0, fu
         res.status(500).send("Error interno del servidor");
     }
 }));
+app.post("/api/guardardatos/:roomId", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const roomId = req.params.roomId;
+        const { guestId, guestName } = req.body;
+        const roomRef = firestore.collection("rooms").doc(roomId);
+        const roomDoc = yield roomRef.get();
+        if (!roomDoc.exists) {
+            return res.status(404).send("Sala no encontrada");
+        }
+        yield roomRef.update({
+            [`users.${guestId}`]: {
+                userName: guestName,
+                role: "guest"
+            }
+        });
+        yield db.ref(`rooms/${roomId}/users/${guestId}`).set({
+            userName: guestName,
+            role: "guest"
+        });
+        const gameRef = db.ref(`rooms/${roomId}/games/current`);
+        const gameSnapshot = yield gameRef.get();
+        if (gameSnapshot.exists()) {
+            yield gameRef.update({ player2Move: null, result: null, gameOver: false });
+        }
+        else {
+            yield gameRef.set({ player1Move: null, player2Move: null, result: null, gameOver: false });
+        }
+        res.status(200).json({ roomId: roomId });
+    }
+    catch (error) {
+        console.error("Error al unirse a la sala:", error);
+        res.status(500).send("Error interno del servidor");
+    }
+}));
 app.put("/api/rooms/:roomId/move", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         console.log("--- Inicio de la solicitud PUT /api/rooms/:roomId/move ---");
